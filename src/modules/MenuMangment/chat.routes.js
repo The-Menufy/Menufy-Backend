@@ -12,7 +12,7 @@
  *     summary: Posez une question à l'assistant IA spécialisé en restauration.
  *     tags: [Chat]
  *     requestBody:
- *       description: Message envoyé par l'utilisateur (ex: idée de menu, conseil en gestion, tendance, etc.)
+ *       description: "Message envoyé par l'utilisateur (ex: idée de menu, conseil : etc.)"
  *       required: true
  *       content:
  *         application/json:
