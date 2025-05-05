@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: menufy-backend
+    env: node
+    plan: free # or "starter", "standard", etc.
+    buildCommand: npm install
+    startCommand: node src/server.js
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - fromGroup: menufy-backend-env # (optional) use an Environment Group for secrets
+    repo: https://github.com/The-Menufy/Menufy-Backend
+    branch: main
+    autoDeploy: false # disables auto-deploys, you deploy manually via the dashboard or API
+
+# Optionally define environment groups for secrets
+envVarGroups:
+  - name: menufy-backend-env
+    envVars:
+      - key: MONGO_URI
+        sync: false # will not sync to GitHub
+      - key: JWT_SECRET
+        sync: false
+      # ...add other secrets here
