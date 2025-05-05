@@ -149,7 +149,7 @@
  */
 const express = require("express");
 const router = express.Router();
-const DishOfTheDay = require("../../models/dishOfTheDay");
+const DishOfTheDay = require("../../models/DishOfTheDay");
 const Product = require("../../models/Product");
 
 // POST a new Dish of the Day
