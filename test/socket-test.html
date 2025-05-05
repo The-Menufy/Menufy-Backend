@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Ingredient Socket Test</title>
+		<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+		<style>
+			.alert {
+				padding: 15px;
+				margin: 10px 0;
+				border: 1px solid #ff9800;
+				border-radius: 4px;
+				background-color: #fff3e0;
+			}
+			#alertContainer {
+				max-height: 400px;
+				overflow-y: auto;
+			}
+			.test-button {
+				padding: 10px 20px;
+				margin: 5px;
+				border: none;
+				border-radius: 4px;
+				background-color: #4caf50;
+				color: white;
+				cursor: pointer;
+			}
+			.test-button:hover {
+				background-color: #45a049;
+			}
+			.ingredient-info {
+				padding: 15px;
+				margin: 10px 0;
+				border: 1px solid #2196f3;
+				border-radius: 4px;
+				background-color: #e3f2fd;
+			}
+			.quantity {
+				font-size: 1.2em;
+				font-weight: bold;
+				color: #1976d2;
+			}
+		</style>
+	</head>
+	<body>
+		<h2>Ingredient Socket Test</h2>
+		<div>
+			<h3>Connection Status: <span id="connectionStatus">Disconnected</span></h3>
+		</div>
+		<div>
+			<button class="test-button" onclick="testDecreaseQuantity()">
+				Test Decrease Quantity
+			</button>
+			<button class="test-button" onclick="fetchIngredientInfo()">
+				Refresh Ingredient Info
+			</button>
+		</div>
+		<div>
+			<h3>Current Ingredient Info:</h3>
+			<div id="ingredientInfo" class="ingredient-info">Loading...</div>
+		</div>
+		<div>
+			<h3>Alerts:</h3>
+			<div id="alertContainer"></div>
+		</div>
+		<script>
+			const socket = io("http://localhost:5000");
+			const connectionStatus = document.getElementById("connectionStatus");
+			const alertContainer = document.getElementById("alertContainer");
+			const ingredientInfo = document.getElementById("ingredientInfo");
+			const ingredientId = "67f1288aa78fd5d6c7cf7bb4";
+			// Socket connection handlers
+			socket.on("connect", () => {
+				connectionStatus.textContent = "Connected";
+				connectionStatus.style.color = "green";
+				fetchIngredientInfo(); // Fetch initial data
+			});
+			socket.on("disconnect", () => {
+				connectionStatus.textContent = "Disconnected";
+				connectionStatus.style.color = "red";
+			});
+			// Listen for ingredient updates
+			socket.on("ingredient-update", (data) => {
+				console.log("Ingredient updated:", data);
+				updateIngredientDisplay(data.ingredient);
+				const alertDiv = document.createElement("div");
+				alertDiv.className = "alert";
+				alertDiv.style.borderColor = "#2196F3";
+				alertDiv.style.backgroundColor = "#E3F2FD";
+				alertDiv.innerHTML = `
+					<strong>Update!</strong><br>
+					${data.message}<br>
+					Ingredient: ${data.ingredient.libelle}<br>
+					Current Quantity: ${data.ingredient.quantity} ${data.ingredient.unit}
+				`;
+				alertContainer.prepend(alertDiv);
+			});
+			// Listen for ingredient alerts
+			socket.on("ingredient-alert", (data) => {
+				const alertDiv = document.createElement("div");
+				alertDiv.className = "alert";
+				alertDiv.innerHTML = `
+					<strong>Alert!</strong><br>
+					${data.message}<br>
+					Ingredient: ${data.ingredient.libelle}<br>
+					Current Quantity: ${data.ingredient.quantity} ${data.ingredient.unit}<br>
+					Min Quantity: ${data.ingredient.minQty} ${data.ingredient.unit}
+				`;
+				alertContainer.prepend(alertDiv);
+				updateIngredientDisplay(data.ingredient);
+			});
+			// Function to update ingredient display
+			function updateIngredientDisplay(ingredient) {
+				ingredientInfo.innerHTML = `
+					<h4>${ingredient.libelle}</h4>
+					<p class="quantity">Current Quantity: ${ingredient.quantity} ${
+					ingredient.unit
+				}</p>
+					<p>Minimum Quantity: ${ingredient.minQty} ${ingredient.unit}</p>
+					<p>Maximum Quantity: ${ingredient.maxQty} ${ingredient.unit}</p>
+					<p>Type: ${ingredient.type}</p>
+					<p>Price: $${ingredient.price}</p>
+					<p>Status: ${ingredient.disponibility ? "Available" : "Not Available"}</p>
+				`;
+			}
+			// Function to fetch current ingredient info
+			async function fetchIngredientInfo() {
+				try {
+					const response = await fetch(
+						`http://localhost:5000/api/ingredient/${ingredientId}`,
+						{
+							method: "GET",
+							headers: {
+								"Content-Type": "application/json",
+							},
+						}
+					);
+					const data = await response.json();
+					if (data.success) {
+						updateIngredientDisplay(data.data);
+					} else {
+						ingredientInfo.innerHTML = `<p>Error: ${data.message}</p>`;
+					}
+				} catch (error) {
+					ingredientInfo.innerHTML = `<p>Error fetching ingredient info: ${error.message}</p>`;
+				}
+			}
+			// Test function to decrease quantity
+			async function testDecreaseQuantity() {
+				try {
+					const response = await fetch(
+						`http://localhost:5000/api/ingredient/${ingredientId}/decrease`,
+						{
+							method: "PATCH",
+							headers: {
+								"Content-Type": "application/json",
+							},
+							body: JSON.stringify({ amount: 5 }),
+						}
+					);
+					const data = await response.json();
+					console.log("Decrease response:", data);
+					if (data.success) {
+						updateIngredientDisplay(data.data);
+					}
+				} catch (error) {
+					console.error("Error:", error);
+				}
+			}
+			// Initial fetch
+			fetchIngredientInfo();
+		</script>
+	</body>
+</html>
