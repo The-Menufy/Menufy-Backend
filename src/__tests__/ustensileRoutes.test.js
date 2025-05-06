@@ -72,7 +72,7 @@ describe('Ustensile Routes', () => {
           quantity     : '5',
           disponibility: 'true',
         })
-        .expect(200);
+        .expect(201);
 
       expect(body).toMatchObject({
         libelle      : 'Couteau',

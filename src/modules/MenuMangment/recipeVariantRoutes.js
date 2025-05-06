@@ -1,3 +1,23 @@
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+const RecipeVariant = require("../../models/recipeVariant");
+const router = express.Router();
+
+console.log("recipeVariantRoutes loaded");
+
+// Set up storage for images
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/");
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({ storage: storage });
+
 /**
  * @swagger
  * tags:
@@ -8,29 +28,30 @@
  *   schemas:
  *     RecipeVariant:
  *       type: object
+ *       required:
+ *         - name
+ *         - portions
  *       properties:
  *         _id:
  *           type: string
+ *           description: Unique identifier for the variant
  *         name:
  *           type: string
+ *           description: Name of the recipe variant
  *         portions:
  *           type: array
  *           items:
- *             type: object
- *         modifiedIngredientsGroup:
- *           type: array
- *           items:
- *             type: object
- *         modifiedSteps:
- *           type: array
- *           items:
- *             type: object
- *         note:
- *           type: string
+ *             type: string
+ *             enum: [half-portion, medium-portion, double-portion]
+ *           description: List of portion types for the variant
  *         images:
  *           type: array
  *           items:
  *             type: string
+ *           description: Array of image URLs for the variant
+ *         isArchived:
+ *           type: boolean
+ *           description: Indicates if the variant is archived
  */
 
 /**
@@ -45,23 +66,20 @@
  *         multipart/form-data:
  *           schema:
  *             type: object
+ *             required:
+ *               - name
+ *               - portions
  *             properties:
  *               name:
  *                 type: string
+ *                 description: Name of the recipe variant
  *               portions:
  *                 type: string
- *                 description: JSON.stringify d'un tableau de portions
- *               modifiedIngredientsGroup:
- *                 type: string
- *                 description: JSON.stringify d'un tableau d'ingrédients modifiés
- *               modifiedSteps:
- *                 type: string
- *                 description: JSON.stringify d'un tableau d'étapes modifiées
- *               note:
- *                 type: string
+ *                 description: Comma-separated list of portion types (e.g., half-portion,medium-portion,double-portion)
  *               photo:
  *                 type: string
  *                 format: binary
+ *                 description: Image file for the variant
  *     responses:
  *       201:
  *         description: Variante créée
@@ -71,6 +89,22 @@
  *               $ref: '#/components/schemas/RecipeVariant'
  *       400:
  *         description: Erreur de validation ou d'upload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *       500:
+ *         description: Erreur serveur
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  *   get:
  *     summary: Obtenir toutes les variantes de recette
  *     tags: [RecipeVariant]
@@ -85,6 +119,13 @@
  *                 $ref: '#/components/schemas/RecipeVariant'
  *       500:
  *         description: Erreur serveur
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  */
 
 /**
@@ -106,20 +147,20 @@
  *         multipart/form-data:
  *           schema:
  *             type: object
+ *             required:
+ *               - name
+ *               - portions
  *             properties:
  *               name:
  *                 type: string
+ *                 description: Name of the recipe variant
  *               portions:
  *                 type: string
- *               modifiedIngredientsGroup:
- *                 type: string
- *               modifiedSteps:
- *                 type: string
- *               note:
- *                 type: string
- *               photo:
+ *                 description: Comma-separated list of portion types (e.g., half-portion,medium-portion,double-portion)
+  *               photo:
  *                 type: string
  *                 format: binary
+ *                 description: Image file for the variant
  *     responses:
  *       200:
  *         description: Variante modifiée
@@ -129,8 +170,22 @@
  *               $ref: '#/components/schemas/RecipeVariant'
  *       404:
  *         description: Variante non trouvée
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  *       500:
  *         description: Erreur serveur
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  *   delete:
  *     summary: Supprimer une variante de recette
  *     tags: [RecipeVariant]
@@ -144,50 +199,137 @@
  *     responses:
  *       200:
  *         description: Variante supprimée
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
  *       404:
  *         description: Variante non trouvée
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  *       500:
  *         description: Erreur serveur
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *   /archive:
+ *     put:
+ *       summary: Archiver une variante de recette
+ *       tags: [RecipeVariant]
+ *       parameters:
+ *         - in: path
+ *           name: id
+ *           required: true
+ *           schema:
+ *             type: string
+ *           description: ID de la variante
+ *       responses:
+ *         200:
+ *           description: Variante archivée
+ *           content:
+ *             application/json:
+ *               schema:
+ *                 $ref: '#/components/schemas/RecipeVariant'
+ *         404:
+ *           description: Variante non trouvée
+ *           content:
+ *             application/json:
+ *               schema:
+ *                 type: object
+ *                 properties:
+ *                   error:
+ *                     type: string
+ *         500:
+ *           description: Erreur serveur
+ *           content:
+ *             application/json:
+ *               schema:
+ *                 type: object
+ *                 properties:
+ *                   error:
+ *                     type: string
+ *   /restore:
+ *     put:
+ *       summary: Restaurer une variante de recette
+ *       tags: [RecipeVariant]
+ *       parameters:
+ *         - in: path
+ *           name: id
+ *           required: true
+ *           schema:
+ *             type: string
+ *           description: ID de la variante
+ *       responses:
+ *         200:
+ *           description: Variante restaurée
+ *           content:
+ *             application/json:
+ *               schema:
+ *                 $ref: '#/components/schemas/RecipeVariant'
+ *         404:
+ *           description: Variante non trouvée
+ *           content:
+ *             application/json:
+ *               schema:
+ *                 type: object
+ *                 properties:
+ *                   error:
+ *                     type: string
+ *         500:
+ *           description: Erreur serveur
+ *           content:
+ *             application/json:
+ *               schema:
+ *                 type: object
+ *                 properties:
+ *                   error:
+ *                     type: string
  */
-const express = require("express");
-const multer = require("multer");
-const path = require("path");
-const RecipeVariant = require("../../models/recipeVariant");
-const router = express.Router();
-
-console.log("recipeVariantRoutes loaded");
-
-// Set up storage for images
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
-  },
-});
-
-const upload = multer({ storage: storage });
 
 // POST a new variant
 router.post("/", upload.single("photo"), async (req, res) => {
   try {
-    const { name, portions, modifiedIngredientsGroup, modifiedSteps, note } =
-      req.body;
+    const { name, portions, modifiedIngredientsGroup, modifiedSteps, note } = req.body;
 
-    const parsedPortions = portions ? JSON.parse(portions) : [];
-    const parsedIngredientsGroup = modifiedIngredientsGroup
-      ? JSON.parse(modifiedIngredientsGroup)
-      : [];
+    // Validate required fields
+    if (!name || !portions) {
+      return res.status(400).json({ error: "Name and portions are required" });
+    }
+
+    // Parse portions as a comma-separated string
+    const parsedPortions = portions.split(',').map(p => p.trim()).filter(p => p);
+    if (parsedPortions.length === 0) {
+      return res.status(400).json({ error: "Portions must be a non-empty list" });
+    }
+    const validPortions = ['half-portion', 'medium-portion', 'double-portion'];
+    const invalidPortions = parsedPortions.filter(p => !validPortions.includes(p));
+    if (invalidPortions.length > 0) {
+      return res.status(400).json({
+        error: `Invalid portion types: ${invalidPortions.join(', ')}. Must be one of: half-portion, medium-portion, double-portion`
+      });
+    }
+
+    // Parse other fields (still JSON for now, can be updated similarly if needed)
+    const parsedIngredientsGroup = modifiedIngredientsGroup ? JSON.parse(modifiedIngredientsGroup) : [];
     const parsedSteps = modifiedSteps ? JSON.parse(modifiedSteps) : [];
     const image = req.file ? `/uploads/${req.file.filename}` : null;
 
     const variant = new RecipeVariant({
       name,
       portions: parsedPortions,
-      modifiedIngredientsGroup: Array.isArray(parsedIngredientsGroup)
-        ? parsedIngredientsGroup
-        : [],
+      modifiedIngredientsGroup: Array.isArray(parsedIngredientsGroup) ? parsedIngredientsGroup : [],
       modifiedSteps: Array.isArray(parsedSteps) ? parsedSteps : [],
       note,
       images: image ? [image] : [],
@@ -233,21 +375,33 @@ router.delete("/:id", async (req, res) => {
 router.put("/:id", upload.single("photo"), async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, portions, modifiedIngredientsGroup, modifiedSteps, note } =
-      req.body;
+    const { name, portions, modifiedIngredientsGroup, modifiedSteps, note } = req.body;
 
-    const parsedPortions = portions ? JSON.parse(portions) : [];
-    const parsedIngredientsGroup = modifiedIngredientsGroup
-      ? JSON.parse(modifiedIngredientsGroup)
-      : [];
+    // Validate required fields
+    if (!name || !portions) {
+      return res.status(400).json({ error: "Name and portions are required" });
+    }
+
+    // Parse portions as a comma-separated string
+    const parsedPortions = portions.split(',').map(p => p.trim()).filter(p => p);
+    if (parsedPortions.length === 0) {
+      return res.status(400).json({ error: "Portions must be a non-empty list" });
+    }
+    const validPortions = ['half-portion', 'medium-portion', 'double-portion'];
+    const invalidPortions = parsedPortions.filter(p => !validPortions.includes(p));
+    if (invalidPortions.length > 0) {
+      return res.status(400).json({
+        error: `Invalid portion types: ${invalidPortions.join(', ')}. Must be one of: half-portion, medium-portion, double-portion`
+      });
+    }
+
+    const parsedIngredientsGroup = modifiedIngredientsGroup ? JSON.parse(modifiedIngredientsGroup) : [];
     const parsedSteps = modifiedSteps ? JSON.parse(modifiedSteps) : [];
 
     const updateData = {
       name,
       portions: parsedPortions,
-      modifiedIngredientsGroup: Array.isArray(parsedIngredientsGroup)
-        ? parsedIngredientsGroup
-        : [],
+      modifiedIngredientsGroup: Array.isArray(parsedIngredientsGroup) ? parsedIngredientsGroup : [],
       modifiedSteps: Array.isArray(parsedSteps) ? parsedSteps : [],
       note,
     };
@@ -274,6 +428,40 @@ router.put("/:id", upload.single("photo"), async (req, res) => {
   } catch (error) {
     console.error("Error updating variant:", error);
     res.status(500).json({ error: "Failed to update variant" });
+  }
+});
+
+// Archive a variant
+router.put("/:id/archive", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const variant = await RecipeVariant.findById(id);
+    if (!variant) {
+      return res.status(404).json({ error: "Variant not found" });
+    }
+    variant.isArchived = true;
+    const updatedVariant = await variant.save();
+    res.status(200).json(updatedVariant);
+  } catch (error) {
+    console.error("Error archiving variant:", error);
+    res.status(500).json({ error: "Failed to archive variant" });
+  }
+});
+
+// Restore a variant
+router.put("/:id/restore", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const variant = await RecipeVariant.findById(id);
+    if (!variant) {
+      return res.status(404).json({ error: "Variant not found" });
+    }
+    variant.isArchived = false;
+    const updatedVariant = await variant.save();
+    res.status(200).json(updatedVariant);
+  } catch (error) {
+    console.error("Error restoring variant:", error);
+    res.status(500).json({ error: "Failed to restore variant" });
   }
 });
 

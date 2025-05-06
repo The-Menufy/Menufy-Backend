@@ -1,234 +1,3 @@
-/**
- * @swagger
- * tags:
- *   - name: Category
- *     description: Menu categories management
- */
-
-/**
- * @swagger
- * components:
- *   schemas:
- *     Category:
- *       type: object
- *       properties:
- *         _id:
- *           type: string
- *           description: Category ID
- *         libelle:
- *           type: string
- *           description: Category name
- *         description:
- *           type: string
- *         visibility:
- *           type: string
- *           enum: [visible, archived]
- *         menu:
- *           type: string
- *           description: Menu ID this category belongs to
- *         photo:
- *           type: string
- *           description: Photo URL
- */
-
-/**
- * @swagger
- * /category/upload:
- *   post:
- *     summary: Create a category with photo upload
- *     tags: [Category]
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               libelle:
- *                 type: string
- *                 description: Category name
- *               description:
- *                 type: string
- *               visibility:
- *                 type: string
- *                 enum: [visible, archived]
- *               menu:
- *                 type: string
- *                 description: Menu ID
- *               photo:
- *                 type: string
- *                 format: binary
- *                 description: Category photo (image file)
- *     responses:
- *       200:
- *         description: The created category
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Category'
- */
-
-/**
- * @swagger
- * /category/upload/{id}:
- *   put:
- *     summary: Update a category with photo upload
- *     tags: [Category]
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: Category ID
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               libelle:
- *                 type: string
- *               description:
- *                 type: string
- *               visibility:
- *                 type: string
- *               menu:
- *                 type: string
- *               photo:
- *                 type: string
- *                 format: binary
- *     responses:
- *       200:
- *         description: The updated category
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Category'
- *       404:
- *         description: Category not found
- */
-
-/**
- * @swagger
- * /category:
- *   get:
- *     summary: Get all categories
- *     tags: [Category]
- *     responses:
- *       200:
- *         description: List of categories
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Category'
- */
-
-/**
- * @swagger
- * /category/{id}:
- *   get:
- *     summary: Get category by ID
- *     tags: [Category]
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: Category ID
- *     responses:
- *       200:
- *         description: The category object
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Category'
- *       404:
- *         description: Category not found
- *   delete:
- *     summary: Delete a category and its products
- *     tags: [Category]
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: Category ID
- *     responses:
- *       200:
- *         description: Category and products deleted
- *       404:
- *         description: Category not found
- */
-
-/**
- * @swagger
- * /category/menu/{menuId}:
- *   get:
- *     summary: Get categories by menu ID
- *     tags: [Category]
- *     parameters:
- *       - in: path
- *         name: menuId
- *         schema:
- *           type: string
- *         required: true
- *         description: Menu ID
- *     responses:
- *       200:
- *         description: Categories for a menu
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Category'
- */
-
-/**
- * @swagger
- * /category/{id}/archive:
- *   put:
- *     summary: Archive a category
- *     tags: [Category]
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: Category ID
- *     responses:
- *       200:
- *         description: Category archived
- *       404:
- *         description: Category not found
- */
-
-/**
- * @swagger
- * /category/{id}/restore:
- *   put:
- *     summary: Restore an archived category
- *     tags: [Category]
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: Category ID
- *     responses:
- *       200:
- *         description: Category restored
- *       404:
- *         description: Category not found
- */
 const express = require("express");
 const router = express.Router();
 const Category = require("../../models/Category");
@@ -238,7 +7,7 @@ const fs = require("fs");
 const Product = require("../../models/Product");
 
 // Crée le dossier si non existant
-const uploadDir = path.join(__dirname, "../../uploads/category");
+const uploadDir = path.join(__dirname, "../../Uploads/category");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // Configuration Multer
@@ -246,9 +15,121 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
-const upload = multer({ storage });
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 5000000 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png/;
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = filetypes.test(file.mimetype);
+    if (extname && mimetype) {
+      return cb(null, true);
+    }
+    cb("Error: Images only (jpeg, jpg, png)!");
+  }
+});
 
-// 🔁 Route POST avec upload
+/**
+ * @swagger
+ * tags:
+ *   - name: Category
+ *     description: Operations for managing menu categories
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Category:
+ *       type: object
+ *       required:
+ *         - libelle
+ *         - visibility
+ *         - menu
+ *       properties:
+ *         _id:
+ *           type: string
+ *           description: Unique identifier for the category
+ *         libelle:
+ *           type: string
+ *           description: Name of the category
+ *         description:
+ *           type: string
+ *           description: Optional description of the category
+ *         visibility:
+ *           type: string
+ *           enum: [visible, archived]
+ *           description: Visibility status of the category
+ *         menu:
+ *           type: string
+ *           description: ID of the menu this category belongs to
+ *         photo:
+ *           type: string
+ *           description: Path to the uploaded category image
+ *     Error:
+ *       type: object
+ *       required:
+ *         - error
+ *       properties:
+ *         error:
+ *           type: string
+ *           description: Error message describing the issue
+ */
+
+/**
+ * @swagger
+ * /category/upload:
+ *   post:
+ *     summary: Create a new category with optional photo upload
+ *     tags: [Category]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - libelle
+ *               - visibility
+ *               - menu
+ *             properties:
+ *               libelle:
+ *                 type: string
+ *                 description: Name of the category
+ *               description:
+ *                 type: string
+ *                 description: Optional description of the category
+ *               visibility:
+ *                 type: string
+ *                 enum: [visible, archived]
+ *                 description: Visibility status of the category
+ *               menu:
+ *                 type: string
+ *                 description: ID of the menu this category belongs to
+ *               photo:
+ *                 type: string
+ *                 format: binary
+ *                 description: Category image file (jpeg, jpg, png; max 5MB)
+ *     responses:
+ *       200:
+ *         description: Category created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Category'
+ *       400:
+ *         description: Validation error or invalid image upload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post("/upload", upload.single("photo"), async (req, res) => {
   console.log("Request body:", req.body); // Log the form fields
   console.log("Uploaded file:", req.file); // Log the file details
@@ -266,7 +147,7 @@ router.post("/upload", upload.single("photo"), async (req, res) => {
     description: req.body.description,
     visibility: req.body.visibility,
     menu: req.body.menu,
-    photo: req.file ? `/uploads/category/${req.file.filename}` : "",
+    photo: req.file ? `/Uploads/category/${req.file.filename}` : "",
   });
 
   try {
@@ -279,7 +160,73 @@ router.post("/upload", upload.single("photo"), async (req, res) => {
   }
 });
 
-// 🔁 Route PUT avec upload
+/**
+ * @swagger
+ * /category/upload/{id}:
+ *   put:
+ *     summary: Update a category with optional photo upload
+ *     tags: [Category]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the category
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - libelle
+ *               - visibility
+ *               - menu
+ *             properties:
+ *               libelle:
+ *                 type: string
+ *                 description: Name of the category
+ *               description:
+ *                 type: string
+ *                 description: Optional description of the category
+ *               visibility:
+ *                 type: string
+ *                 enum: [visible, archived]
+ *                 description: Visibility status of the category
+ *               menu:
+ *                 type: string
+ *                 description: ID of the menu this category belongs to
+ *               photo:
+ *                 type: string
+ *                 format: binary
+ *                 description: Category image file (jpeg, jpg, png; max 5MB)
+ *     responses:
+ *       200:
+ *         description: Category updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Category'
+ *       400:
+ *         description: Validation error or invalid image upload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Category not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put("/upload/:id", upload.single("photo"), async (req, res) => {
   try {
     console.log("Request body:", req.body); // Log the form fields
@@ -322,7 +269,7 @@ router.put("/upload/:id", upload.single("photo"), async (req, res) => {
         }
       }
       // Update the photo field with the new file
-      updatedFields.photo = `/uploads/category/${req.file.filename}`;
+      updatedFields.photo = `/Uploads/category/${req.file.filename}`;
     } else {
       // Preserve the existing photo if no new photo is uploaded
       updatedFields.photo = existingCategory.photo;
@@ -346,7 +293,28 @@ router.put("/upload/:id", upload.single("photo"), async (req, res) => {
   }
 });
 
-// Routes existantes
+/**
+ * @swagger
+ * /category:
+ *   get:
+ *     summary: Retrieve all categories
+ *     tags: [Category]
+ *     responses:
+ *       200:
+ *         description: List of all categories
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Category'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get("/", async (req, res) => {
   try {
     const categories = await Category.find().populate("menu");
@@ -357,6 +325,39 @@ router.get("/", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /category/{id}:
+ *   get:
+ *     summary: Retrieve a category by ID
+ *     tags: [Category]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the category
+ *     responses:
+ *       200:
+ *         description: Category retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Category'
+ *       404:
+ *         description: Category not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get("/:id", async (req, res) => {
   try {
     const category = await Category.findById(req.params.id).populate("menu");
@@ -370,6 +371,43 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /category/{id}:
+ *   delete:
+ *     summary: Delete a category and its associated products
+ *     tags: [Category]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the category
+ *     responses:
+ *       200:
+ *         description: Category and associated products deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Confirmation message
+ *       404:
+ *         description: Category not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.delete("/:id", async (req, res) => {
   try {
     const category = await Category.findById(req.params.id);
@@ -394,16 +432,97 @@ router.delete("/:id", async (req, res) => {
     console.error("Error deleting category:", err);
     res.status(500).json({ error: err.message });
   }
-}); // In your category route file (e.g., routes/category.js)
+});
+
+/**
+ * @swagger
+ * /category/menu/{menuId}:
+ *   get:
+ *     summary: Retrieve categories by menu ID
+ *     tags: [Category]
+ *     parameters:
+ *       - in: path
+ *         name: menuId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the menu
+ *     responses:
+ *       200:
+ *         description: List of categories for the specified menu
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Category'
+ *       400:
+ *         description: Invalid menu ID or other error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get("/menu/:menuId", async (req, res) => {
   try {
-    const categories = await Category.find({ menu: req.params.menuId }); // Assuming a menuFK field in Category model
+    const categories = await Category.find({ menu: req.params.menuId });
     res.json(categories);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
-// ✅ Route pour archiver une catégorie
+
+/**
+ * @swagger
+ * /category/{id}/archive:
+ *   put:
+ *     summary: Archive a category
+ *     tags: [Category]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the category
+ *     responses:
+ *       200:
+ *         description: Category archived successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Confirmation message
+ *                 category:
+ *                   $ref: '#/components/schemas/Category'
+ *       400:
+ *         description: Category already archived
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Category not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put("/:id/archive", async (req, res) => {
   try {
     const { id } = req.params;
@@ -435,7 +554,52 @@ router.put("/:id/archive", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-// ✅ Route pour restaurer une catégorie archivée
+
+/**
+ * @swagger
+ * /category/{id}/restore:
+ *   put:
+ *     summary: Restore an archived category
+ *     tags: [Category]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the category
+ *     responses:
+ *       200:
+ *         description: Category restored successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Confirmation message
+ *                 category:
+ *                   $ref: '#/components/schemas/Category'
+ *       400:
+ *         description: Category not archived
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Category not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put("/:id/restore", async (req, res) => {
   try {
     const { id } = req.params;

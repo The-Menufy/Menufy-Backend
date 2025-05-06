@@ -1,45 +1,150 @@
+const express = require("express");
+const router = express.Router();
+const DishOfTheDay = require("../../models/DishOfTheDay");
+const Product = require("../../models/Product");
+
 /**
  * @swagger
  * tags:
  *   - name: DishOfTheDay
- *     description: Gestion du plat du jour
- *
+ *     description: Operations for managing the dish of the day
+ */
+
+/**
+ * @swagger
  * components:
  *   schemas:
  *     DishOfTheDay:
  *       type: object
+ *       required:
+ *         - date
+ *         - productFK
  *       properties:
  *         _id:
  *           type: string
+ *           description: Unique identifier for the dish of the day
  *         date:
  *           type: string
  *           format: date
+ *           description: Date the dish is featured
  *         statut:
  *           type: string
- *           example: "Active"
+ *           description: Status of the dish (e.g., Active)
+ *           example: Active
  *         productFK:
  *           $ref: '#/components/schemas/Product'
+ *           description: Reference to the associated product
  *     Product:
  *       type: object
  *       properties:
  *         _id:
  *           type: string
+ *           description: Unique identifier for the product
  *         name:
  *           type: string
+ *           description: Name of the product
  *         price:
  *           type: number
+ *           description: Price of the product
  *         categoryFK:
- *           type: string
+ *           type: object
+ *           properties:
+ *             _id:
+ *               type: string
+ *               description: Category ID
+ *             libelle:
+ *               type: string
+ *               description: Category name
+ *           description: Reference to the associated category
  *         recipeFK:
+ *           type: object
+ *           properties:
+ *             _id:
+ *               type: string
+ *               description: Recipe ID
+ *             ingredientsGroup:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   items:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         ingredient:
+ *                           type: object
+ *                           properties:
+ *                             _id:
+ *                               type: string
+ *                               description: Ingredient ID
+ *                             libelle:
+ *                               type: string
+ *                               description: Ingredient name
+ *                             photo:
+ *                               type: string
+ *                               description: Ingredient image path
+ *                             qtMax:
+ *                               type: number
+ *                               description: Maximum quantity
+ *             utensils:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   _id:
+ *                     type: string
+ *                     description: Utensil ID
+ *                   libelle:
+ *                     type: string
+ *                     description: Utensil name
+ *                   quantity:
+ *                     type: number
+ *                     description: Quantity available
+ *                   disponibility:
+ *                     type: boolean
+ *                     description: Availability status
+ *                   photo:
+ *                     type: string
+ *                     description: Utensil image path
+ *             variants:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   _id:
+ *                     type: string
+ *                     description: Variant ID
+ *                   name:
+ *                     type: string
+ *                     description: Variant name
+ *                   portions:
+ *                     type: number
+ *                     description: Number of portions
+ *                   images:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *                       description: Image paths
+ *           description: Reference to the associated recipe
+ *     Error:
+ *       type: object
+ *       required:
+ *         - message
+ *       properties:
+ *         message:
  *           type: string
- *         # ... add more fields as needed
+ *           description: Error message
+ *         error:
+ *           type: string
+ *           description: Detailed error information
  */
 
 /**
  * @swagger
  * /dish:
  *   post:
- *     summary: Ajouter un plat du jour
+ *     summary: Create a new dish of the day
  *     tags: [DishOfTheDay]
  *     requestBody:
  *       required: true
@@ -54,105 +159,35 @@
  *               date:
  *                 type: string
  *                 format: date
+ *                 description: Date the dish is featured
  *                 example: "2024-05-04"
  *               statut:
  *                 type: string
- *                 example: "Active"
+ *                 description: Status of the dish
+ *                 example: Active
  *               productFK:
  *                 type: string
- *                 description: ID du produit lié
+ *                 description: ID of the associated product
  *     responses:
  *       201:
- *         description: Plat du jour créé
+ *         description: Dish of the day created successfully
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/DishOfTheDay'
  *       400:
- *         description: Données invalides ou produit inexistant
- */
-
-/**
- * @swagger
- * /dish:
- *   get:
- *     summary: Obtenir tous les plats du jour
- *     tags: [DishOfTheDay]
- *     responses:
- *       200:
- *         description: Liste des plats du jour
+ *         description: Invalid data or product not found
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/DishOfTheDay'
+ *               $ref: '#/components/schemas/Error'
  *       500:
- *         description: Erreur serveur
- */
-
-/**
- * @swagger
- * /dish/{id}:
- *   put:
- *     summary: Modifier un plat du jour
- *     tags: [DishOfTheDay]
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: ID du plat du jour
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               date:
- *                 type: string
- *                 format: date
- *               statut:
- *                 type: string
- *               productFK:
- *                 type: string
- *     responses:
- *       200:
- *         description: Plat du jour modifié
+ *         description: Server error
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/DishOfTheDay'
- *       404:
- *         description: Plat du jour non trouvé
- *       500:
- *         description: Erreur serveur
- *   delete:
- *     summary: Supprimer un plat du jour
- *     tags: [DishOfTheDay]
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: ID du plat du jour
- *     responses:
- *       200:
- *         description: Plat du jour supprimé
- *       404:
- *         description: Plat du jour non trouvé
- *       500:
- *         description: Erreur serveur
+ *               $ref: '#/components/schemas/Error'
  */
-const express = require("express");
-const router = express.Router();
-const DishOfTheDay = require("../../models/DishOfTheDay");
-const Product = require("../../models/Product");
-
-// POST a new Dish of the Day
 router.post("/", async (req, res) => {
   try {
     const { date, statut, productFK } = req.body;
@@ -207,7 +242,28 @@ router.post("/", async (req, res) => {
   }
 });
 
-// GET all Dishes of the Day
+/**
+ * @swagger
+ * /dish:
+ *   get:
+ *     summary: Retrieve all dishes of the day
+ *     tags: [DishOfTheDay]
+ *     responses:
+ *       200:
+ *         description: List of all dishes of the day
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/DishOfTheDay'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get("/", async (req, res) => {
   try {
     const dishes = await DishOfTheDay.find()
@@ -243,7 +299,64 @@ router.get("/", async (req, res) => {
   }
 });
 
-// PUT /dish/:id
+/**
+ * @swagger
+ * /dish/{id}:
+ *   put:
+ *     summary: Update a dish of the day
+ *     tags: [DishOfTheDay]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the dish of the day
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               date:
+ *                 type: string
+ *                 format: date
+ *                 description: Date the dish is featured
+ *                 example: "2024-05-04"
+ *               statut:
+ *                 type: string
+ *                 description: Status of the dish
+ *                 example: Active
+ *               productFK:
+ *                 type: string
+ *                 description: ID of the associated product
+ *     responses:
+ *       200:
+ *         description: Dish of the day updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DishOfTheDay'
+ *       400:
+ *         description: Invalid data or product not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Dish of the day not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put("/:id", async (req, res) => {
   try {
     const { date, statut, productFK } = req.body;
@@ -298,7 +411,43 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE a Dish of the Day
+/**
+ * @swagger
+ * /dish/{id}:
+ *   delete:
+ *     summary: Delete a dish of the day
+ *     tags: [DishOfTheDay]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the dish of the day
+ *     responses:
+ *       200:
+ *         description: Dish of the day deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Confirmation message
+ *       404:
+ *         description: Dish of the day not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.delete("/:id", async (req, res) => {
   try {
     const dish = await DishOfTheDay.findByIdAndDelete(req.params.id);
