@@ -408,15 +408,23 @@ router.put("/:id/archive", async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Vérifier si la catégorie existe
+    const category = await Category.findById(id);
+    if (!category) {
+      return res.status(404).json({ error: "Category not found" });
+    }
+
+    // Vérifier si la catégorie est déjà archivée
+    if (category.visibility === "archived") {
+      return res.status(400).json({ error: "Category is already archived" });
+    }
+
+    // Archiver la catégorie
     const updatedCategory = await Category.findByIdAndUpdate(
       id,
       { visibility: "archived" },
       { new: true }
     );
-
-    if (!updatedCategory) {
-      return res.status(404).json({ error: "Category not found" });
-    }
 
     res.json({
       message: "Category archived successfully",
