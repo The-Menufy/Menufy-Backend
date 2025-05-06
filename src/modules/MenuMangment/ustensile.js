@@ -1,199 +1,3 @@
-/**
- * @swagger
- * tags:
- *   - name: Ustensile
- *     description: Gestion des ustensiles de cuisine
- *
- * components:
- *   schemas:
- *     Ustensile:
- *       type: object
- *       properties:
- *         _id:
- *           type: string
- *         libelle:
- *           type: string
- *         quantity:
- *           type: number
- *         disponibility:
- *           type: boolean
- *         photo:
- *           type: string
- *         archived:
- *           type: boolean
- */
-
-/**
- * @swagger
- * /ustensile:
- *   post:
- *     summary: Ajouter un ustensile (avec upload d'image)
- *     tags: [Ustensile]
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               libelle:
- *                 type: string
- *               quantity:
- *                 type: number
- *               disponibility:
- *                 type: boolean
- *               photo:
- *                 type: string
- *                 format: binary
- *     responses:
- *       200:
- *         description: Ustensile ajouté
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Ustensile'
- *       400:
- *         description: Erreur de validation ou d'upload
- *   get:
- *     summary: Obtenir tous les ustensiles
- *     tags: [Ustensile]
- *     responses:
- *       200:
- *         description: Liste des ustensiles
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Ustensile'
- *       400:
- *         description: Erreur serveur
- */
-
-/**
- * @swagger
- * /ustensile/{id}:
- *   get:
- *     summary: Obtenir un ustensile par son ID
- *     tags: [Ustensile]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID de l'ustensile
- *     responses:
- *       200:
- *         description: Ustensile trouvé
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Ustensile'
- *       404:
- *         description: Ustensile non trouvé
- *   put:
- *     summary: Modifier un ustensile (avec upload d'image)
- *     tags: [Ustensile]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID de l'ustensile
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               libelle:
- *                 type: string
- *               quantity:
- *                 type: number
- *               disponibility:
- *                 type: boolean
- *               archived:
- *                 type: boolean
- *               photo:
- *                 type: string
- *                 format: binary
- *     responses:
- *       200:
- *         description: Ustensile modifié
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Ustensile'
- *       404:
- *         description: Ustensile non trouvé
- *       400:
- *         description: Erreur de validation ou d'upload
- *   delete:
- *     summary: Supprimer un ustensile
- *     tags: [Ustensile]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID de l'ustensile
- *     responses:
- *       200:
- *         description: Ustensile supprimé
- *       404:
- *         description: Ustensile non trouvé
- *       400:
- *         description: Erreur serveur
- */
-
-/**
- * @swagger
- * /ustensile/{id}/archive:
- *   put:
- *     summary: Archiver un ustensile
- *     tags: [Ustensile]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID de l'ustensile
- *     responses:
- *       200:
- *         description: Ustensile archivé
- *       404:
- *         description: Ustensile non trouvé
- *       400:
- *         description: Ustensile déjà archivé
- *       500:
- *         description: Erreur serveur
- *
- * /ustensile/{id}/restore:
- *   put:
- *     summary: Restaurer un ustensile archivé
- *     tags: [Ustensile]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID de l'ustensile
- *     responses:
- *       200:
- *         description: Ustensile restauré
- *       404:
- *         description: Ustensile non trouvé
- *       400:
- *         description: Ustensile non archivé
- *       500:
- *         description: Erreur serveur
- */
 const express = require("express");
 const router = express.Router();
 const Ustensile = require("../../models/Ustensile");
@@ -202,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 
 // Configure multer storage
-const uploadDir = path.join(__dirname, "../../Uploads/ustensiles");
+const uploadDir = path.join(__dirname, "../../uploads/ustensiles");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
@@ -227,51 +31,282 @@ const upload = multer({
   },
 }).single("photo");
 
-// Create new ustensile with image upload
+/**
+ * @swagger
+ * tags:
+ *   - name: Ustensile
+ *     description: Operations for managing kitchen utensils
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Ustensile:
+ *       type: object
+ *       required:
+ *         - libelle
+ *         - quantity
+ *         - disponibility
+ *       properties:
+ *         _id:
+ *           type: string
+ *           description: Unique identifier for the utensil
+ *         libelle:
+ *           type: string
+ *           description: Name of the utensil
+ *         quantity:
+ *           type: number
+ *           description: Quantity of the utensil available
+ *         disponibility:
+ *           type: boolean
+ *           description: Availability status of the utensil
+ *         photo:
+ *           type: string
+ *           description: Path to the uploaded utensil image
+ *         archived:
+ *           type: boolean
+ *           description: Indicates if the utensil is archived
+ *     Error:
+ *       type: object
+ *       required:
+ *         - error
+ *       properties:
+ *         error:
+ *           type: string
+ *           description: Error message describing the issue
+ */
+
+/**
+ * @swagger
+ * /ustensile:
+ *   post:
+ *     summary: Create a new utensil with optional image upload
+ *     tags: [Ustensile]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - libelle
+ *               - quantity
+ *               - disponibility
+ *             properties:
+ *               libelle:
+ *                 type: string
+ *                 description: Name of the utensil
+ *               quantity:
+ *                 type: number
+ *                 description: Quantity of the utensil available
+ *               disponibility:
+ *                 type: boolean
+ *                 description: Availability status of the utensil
+ *               photo:
+ *                 type: string
+ *                 format: binary
+ *                 description: Utensil image file (jpeg, jpg, png; max 5MB)
+ *     responses:
+ *       201:
+ *         description: Utensil created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ustensile'
+ *       400:
+ *         description: Validation error or invalid image upload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post("/", upload, async (req, res) => {
   try {
+    const { libelle, quantity, disponibility } = req.body;
+
+    if (!libelle || quantity === undefined || disponibility === undefined) {
+      return res.status(400).json({ error: "Libelle, quantity, and disponibility are required" });
+    }
+
     const ustensileData = {
-      libelle: req.body.libelle,
-      quantity: parseFloat(req.body.quantity),
-      disponibility: req.body.disponibility === "true",
+      libelle,
+      quantity: parseFloat(quantity),
+      disponibility: disponibility === "true",
       photo: req.file ? `/Uploads/ustensiles/${req.file.filename}` : null,
-      archived: false, // Ensure new ustensiles are not archived
+      archived: false,
     };
     const ustensile = new Ustensile(ustensileData);
-    res.json(await ustensile.save());
+    const savedUstensile = await ustensile.save();
+    res.status(201).json(savedUstensile);
   } catch (error) {
+    console.error("Error creating utensil:", error);
     res.status(400).json({ error: error.message });
   }
 });
 
-// Get all ustensiles
+/**
+ * @swagger
+ * /ustensile:
+ *   get:
+ *     summary: Retrieve all utensils
+ *     tags: [Ustensile]
+ *     responses:
+ *       200:
+ *         description: List of all utensils
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Ustensile'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get("/", async (req, res) => {
   try {
-    res.json(await Ustensile.find());
+    const ustensiles = await Ustensile.find();
+    res.json(ustensiles);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    console.error("Error fetching utensils:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// Get single ustensile
+/**
+ * @swagger
+ * /ustensile/{id}:
+ *   get:
+ *     summary: Retrieve a utensil by ID
+ *     tags: [Ustensile]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the utensil
+ *     responses:
+ *       200:
+ *         description: Utensil retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ustensile'
+ *       404:
+ *         description: Utensil not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get("/:id", async (req, res) => {
   try {
     const ustensile = await Ustensile.findById(req.params.id);
-    if (!ustensile)
+    if (!ustensile) {
       return res.status(404).json({ error: "Ustensile not found" });
+    }
     res.json(ustensile);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    console.error("Error fetching utensil:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// Update ustensile (with optional image upload)
+/**
+ * @swagger
+ * /ustensile/{id}:
+ *   put:
+ *     summary: Update a utensil with optional image upload
+ *     tags: [Ustensile]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the utensil
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - libelle
+ *               - quantity
+ *               - disponibility
+ *             properties:
+ *               libelle:
+ *                 type: string
+ *                 description: Name of the utensil
+ *               quantity:
+ *                 type: number
+ *                 description: Quantity of the utensil available
+ *               disponibility:
+ *                 type: boolean
+ *                 description: Availability status of the utensil
+ *               archived:
+ *                 type: boolean
+ *                 description: Archive status of the utensil
+ *               photo:
+ *                 type: string
+ *                 format: binary
+ *                 description: Utensil image file (jpeg, jpg, png; max 5MB)
+ *     responses:
+ *       200:
+ *         description: Utensil updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ustensile'
+ *       400:
+ *         description: Validation error or invalid image upload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Utensil not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put("/:id", upload, async (req, res) => {
   try {
+    const { libelle, quantity, disponibility } = req.body;
+
+    if (!libelle || quantity === undefined || disponibility === undefined) {
+      return res.status(400).json({ error: "Libelle, quantity, and disponibility are required" });
+    }
+
     const updateData = {
-      libelle: req.body.libelle,
-      quantity: parseFloat(req.body.quantity),
-      disponibility: req.body.disponibility === "true",
+      libelle,
+      quantity: parseFloat(quantity),
+      disponibility: disponibility === "true",
       archived: req.body.archived ? req.body.archived === "true" : undefined,
     };
 
@@ -295,20 +330,59 @@ router.put("/:id", upload, async (req, res) => {
       updateData,
       { new: true }
     );
-    if (!ustensile)
+    if (!ustensile) {
       return res.status(404).json({ error: "Ustensile not found" });
+    }
     res.json(ustensile);
   } catch (error) {
+    console.error("Error updating utensil:", error);
     res.status(400).json({ error: error.message });
   }
 });
 
-// Delete ustensile
+/**
+ * @swagger
+ * /ustensile/{id}:
+ *   delete:
+ *     summary: Delete a utensil
+ *     tags: [Ustensile]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the utensil
+ *     responses:
+ *       200:
+ *         description: Utensil deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Confirmation message
+ *       404:
+ *         description: Utensil not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.delete("/:id", async (req, res) => {
   try {
     const ustensile = await Ustensile.findById(req.params.id);
-    if (!ustensile)
+    if (!ustensile) {
       return res.status(404).json({ error: "Ustensile not found" });
+    }
 
     if (ustensile.photo) {
       const photoPath = path.join(__dirname, "../../", ustensile.photo);
@@ -320,11 +394,56 @@ router.delete("/:id", async (req, res) => {
     await Ustensile.findByIdAndDelete(req.params.id);
     res.json({ message: "Ustensile deleted successfully" });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    console.error("Error deleting utensil:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// Archive ustensile
+/**
+ * @swagger
+ * /ustensile/{id}/archive:
+ *   put:
+ *     summary: Archive a utensil
+ *     tags: [Ustensile]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the utensil
+ *     responses:
+ *       200:
+ *         description: Utensil archived successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Confirmation message
+ *                 ustensile:
+ *                   $ref: '#/components/schemas/Ustensile'
+ *       400:
+ *         description: Utensil already archived
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Utensil not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put("/:id/archive", async (req, res) => {
   try {
     const ustensile = await Ustensile.findById(req.params.id);
@@ -347,11 +466,56 @@ router.put("/:id/archive", async (req, res) => {
       ustensile: updatedUstensile,
     });
   } catch (error) {
+    console.error("Error archiving utensil:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Restore ustensile
+/**
+ * @swagger
+ * /ustensile/{id}/restore:
+ *   put:
+ *     summary: Restore an archived utensil
+ *     tags: [Ustensile]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the utensil
+ *     responses:
+ *       200:
+ *         description: Utensil restored successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Confirmation message
+ *                 ustensile:
+ *                   $ref: '#/components/schemas/Ustensile'
+ *       400:
+ *         description: Utensil not archived
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Utensil not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put("/:id/restore", async (req, res) => {
   try {
     const ustensile = await Ustensile.findById(req.params.id);
@@ -374,6 +538,7 @@ router.put("/:id/restore", async (req, res) => {
       ustensile: updatedUstensile,
     });
   } catch (error) {
+    console.error("Error restoring utensil:", error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -1,199 +1,3 @@
-/**
- * @swagger
- * tags:
- *   - name: Menu
- *     description: Gestion des menus
- *
- * components:
- *   schemas:
- *     Menu:
- *       type: object
- *       properties:
- *         _id:
- *           type: string
- *         name:
- *           type: string
- *         photo:
- *           type: string
- *         visibility:
- *           type: string
- *         rate:
- *           type: integer
- *         archived:
- *           type: boolean
- */
-
-/**
- * @swagger
- * /menu:
- *   post:
- *     summary: Ajouter un menu (avec upload d'image)
- *     tags: [Menu]
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *               photo:
- *                 type: string
- *                 format: binary
- *               visibility:
- *                 type: string
- *               rate:
- *                 type: integer
- *     responses:
- *       201:
- *         description: Menu créé
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Menu'
- *       400:
- *         description: Erreur de validation ou d'upload
- *   get:
- *     summary: Obtenir tous les menus
- *     tags: [Menu]
- *     responses:
- *       200:
- *         description: Liste des menus
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Menu'
- *       400:
- *         description: Erreur serveur
- */
-
-/**
- * @swagger
- * /menu/{id}:
- *   get:
- *     summary: Obtenir un menu par son ID
- *     tags: [Menu]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID du menu
- *     responses:
- *       200:
- *         description: Menu trouvé
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Menu'
- *       404:
- *         description: Menu non trouvé
- *   put:
- *     summary: Modifier un menu (avec upload d'image)
- *     tags: [Menu]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID du menu
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *               photo:
- *                 type: string
- *                 format: binary
- *               visibility:
- *                 type: string
- *               rate:
- *                 type: integer
- *               archived:
- *                 type: boolean
- *     responses:
- *       200:
- *         description: Menu modifié
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Menu'
- *       404:
- *         description: Menu non trouvé
- *       400:
- *         description: Erreur de validation ou d'upload
- *   delete:
- *     summary: Supprimer un menu (et cascade sur catégories/produits)
- *     tags: [Menu]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID du menu
- *     responses:
- *       200:
- *         description: Menu et catégories/produits associés supprimés
- *       404:
- *         description: Menu non trouvé
- *       400:
- *         description: Erreur serveur
- */
-
-/**
- * @swagger
- * /menu/{id}/archive:
- *   put:
- *     summary: Archiver un menu
- *     tags: [Menu]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID du menu
- *     responses:
- *       200:
- *         description: Menu archivé
- *       404:
- *         description: Menu non trouvé
- *       400:
- *         description: Menu déjà archivé
- *       500:
- *         description: Erreur serveur
- *
- * /menu/{id}/restore:
- *   put:
- *     summary: Restaurer un menu archivé
- *     tags: [Menu]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID du menu
- *     responses:
- *       200:
- *         description: Menu restauré
- *       404:
- *         description: Menu non trouvé
- *       400:
- *         description: Menu non archivé
- *       500:
- *         description: Erreur serveur
- */
 const express = require("express");
 const router = express.Router();
 const Menu = require("../../models/Menu");
@@ -230,7 +34,93 @@ const upload = multer({
   },
 }).single("photo");
 
-// Create new menu item with image upload
+/**
+ * @swagger
+ * tags:
+ *   - name: Menu
+ *     description: Operations for managing menus
+ *
+ * components:
+ *   schemas:
+ *     Menu:
+ *       type: object
+ *       required:
+ *         - name
+ *         - visibility
+ *         - rate
+ *       properties:
+ *         _id:
+ *           type: string
+ *           description: Unique identifier for the menu
+ *         name:
+ *           type: string
+ *           description: Name of the menu
+ *         photo:
+ *           type: string
+ *           description: Path to the uploaded menu image
+ *         visibility:
+ *           type: string
+ *           description: Visibility status of the menu (e.g., public, private)
+ *         rate:
+ *           type: number
+ *           description: Rating or price of the menu
+ *         archived:
+ *           type: boolean
+ *           description: Indicates if the menu is archived
+ *     Error:
+ *       type: object
+ *       required:
+ *         - error
+ *       properties:
+ *         error:
+ *           type: string
+ *           description: Error message describing the issue
+ */
+
+/**
+ * @swagger
+ * /menu:
+ *   post:
+ *     summary: Create a new menu with optional image upload
+ *     tags: [Menu]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - visibility
+ *               - rate
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Name of the menu
+ *               photo:
+ *                 type: string
+ *                 format: binary
+ *                 description: Image file for the menu (jpeg, jpg, png; max 5MB)
+ *               visibility:
+ *                 type: string
+ *                 description: Visibility status of the menu
+ *               rate:
+ *                 type: number
+ *                 description: Rating or price of the menu
+ *     responses:
+ *       201:
+ *         description: Menu created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Menu'
+ *       400:
+ *         description: Validation error or invalid image upload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post("/", upload, async (req, res) => {
   try {
     // Validate required fields
@@ -258,7 +148,144 @@ router.post("/", upload, async (req, res) => {
   }
 });
 
-// Update menu item
+/**
+ * @swagger
+ * /menu:
+ *   get:
+ *     summary: Retrieve all menus
+ *     tags: [Menu]
+ *     responses:
+ *       200:
+ *         description: List of all menus
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Menu'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.get("/", async (req, res) => {
+  try {
+    const menus = await Menu.find();
+    res.json(menus);
+  } catch (error) {
+    console.error("Error fetching menus:", error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /menu/{id}:
+ *   get:
+ *     summary: Retrieve a menu by ID
+ *     tags: [Menu]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the menu
+ *     responses:
+ *       200:
+ *         description: Menu retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Menu'
+ *       404:
+ *         description: Menu not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.get("/:id", async (req, res) => {
+  try {
+    const menu = await Menu.findById(req.params.id);
+    if (!menu) {
+      return res.status(404).json({ error: "Menu not found" });
+    }
+    res.json(menu);
+  } catch (error) {
+    console.error("Error fetching menu:", error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /menu/{id}:
+ *   put:
+ *     summary: Update a menu with optional image upload
+ *     tags: [Menu]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the menu
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - visibility
+ *               - rate
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Name of the menu
+ *               photo:
+ *                 type: string
+ *                 format: binary
+ *                 description: Image file for the menu (jpeg, jpg, png; max 5MB)
+ *               visibility:
+ *                 type: string
+ *                 description: Visibility status of the menu
+ *               rate:
+ *                 type: number
+ *                 description: Rating or price of the menu
+ *               archived:
+ *                 type: boolean
+ *                 description: Archive status of the menu
+ *     responses:
+ *       200:
+ *         description: Menu updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Menu'
+ *       400:
+ *         description: Validation error or invalid image upload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Menu not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put("/:id", upload, async (req, res) => {
   try {
     // Validate required fields
@@ -301,32 +328,43 @@ router.put("/:id", upload, async (req, res) => {
   }
 });
 
-// Get all menu items
-router.get("/", async (req, res) => {
-  try {
-    const menus = await Menu.find();
-    res.json(menus);
-  } catch (error) {
-    console.error("Error fetching menus:", error);
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Get single menu item
-router.get("/:id", async (req, res) => {
-  try {
-    const menu = await Menu.findById(req.params.id);
-    if (!menu) {
-      return res.status(404).json({ error: "Menu not found" });
-    }
-    res.json(menu);
-  } catch (error) {
-    console.error("Error fetching menu:", error);
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Delete menu item
+/**
+ * @swagger
+ * /menu/{id}:
+ *   delete:
+ *     summary: Delete a menu and its associated categories and products
+ *     tags: [Menu]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the menu
+ *     responses:
+ *       200:
+ *         description: Menu and associated data deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Confirmation message
+ *       404:
+ *         description: Menu not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.delete("/:id", async (req, res) => {
   try {
     const menu = await Menu.findById(req.params.id);
@@ -368,7 +406,52 @@ router.delete("/:id", async (req, res) => {
     res.status(400).json({ error: error.message });
   }
 });
-// Archive menu item
+
+/**
+ * @swagger
+ * /menu/{id}/archive:
+ *   put:
+ *     summary: Archive a menu
+ *     tags: [Menu]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the menu
+ *     responses:
+ *       200:
+ *         description: Menu archived successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Confirmation message
+ *                 menu:
+ *                   $ref: '#/components/schemas/Menu'
+ *       400:
+ *         description: Menu already archived
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Menu not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put("/:id/archive", async (req, res) => {
   try {
     const { id } = req.params;
@@ -395,7 +478,51 @@ router.put("/:id/archive", async (req, res) => {
   }
 });
 
-// Restore menu item
+/**
+ * @swagger
+ * /menu/{id}/restore:
+ *   put:
+ *     summary: Restore an archived menu
+ *     tags: [Menu]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the menu
+ *     responses:
+ *       200:
+ *         description: Menu restored successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: Confirmation message
+ *                 menu:
+ *                   $ref: '#/components/schemas/Menu'
+ *       400:
+ *         description: Menu not archived
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Menu not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put("/:id/restore", async (req, res) => {
   try {
     const { id } = req.params;

@@ -96,7 +96,7 @@ describe('Category routes', () => {
         description: 'Tasty starters',
         visibility: 'visible',
         menu      : menuId,
-        photo     : '/uploads/category/test-image.jpg',
+        photo     : '/Uploads/category/test-image.jpg',
       });
     });
 
@@ -119,7 +119,7 @@ describe('Category routes', () => {
         description: 'Old',
         visibility: 'visible',
         menu      : menuId,
-        photo     : '/uploads/category/old-image.jpg',
+        photo     : '/Uploads/category/old-image.jpg',
       });
       catId = _id.toString();
     });
@@ -139,7 +139,7 @@ describe('Category routes', () => {
           libelle    : 'Updated',
           description: 'New desc',
           visibility : 'visible',
-          photo      : '/uploads/category/test-image.jpg',
+          photo      : '/Uploads/category/test-image.jpg',
           menu       : { _id: menuId },   // le champ menu est un objet peuplé
         });
       
@@ -203,7 +203,7 @@ describe('Category routes', () => {
         libelle   : 'Del',
         visibility: 'visible',
         menu      : menuId,
-        photo     : '/uploads/category/test-image.jpg',
+        photo     : '/Uploads/category/test-image.jpg',
       });
       delId = _id.toString();
     });

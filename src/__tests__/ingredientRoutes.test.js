@@ -75,7 +75,7 @@ describe('Ingredient Routes', () => {
           disponibility: 'true',
           qtMax        : '500',
         })
-        .expect(200);
+        .expect(201);
 
       expect(body).toMatchObject({
         libelle      : 'Tomate',
