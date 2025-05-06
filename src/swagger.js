@@ -15,7 +15,7 @@ const options = {
       },
     ],
   },
-  apis: [
+  apis: [ 
     "./src/modules/**/*.js", // <-- Make sure this matches your routes!
     "./src/routes/*.js",
   ],
