@@ -13,7 +13,7 @@ const Category    = require('../models/Category');
 const Ingredieent = require('../models/Ingredieent');
 const Ustensile   = require('../models/Ustensile');
 const Variant     = require('../models/recipeVariant');
-const Dish        = require('../models/dishOfTheDay');  // ✅
+const Dish        = require('../models/DishOfTheDay');  // ✅
 
 /* ================= mocks ( BEFORE router import ) ===== */
 jest.mock('fs', () => {
