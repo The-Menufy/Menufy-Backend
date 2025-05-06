@@ -7,23 +7,17 @@ WORKDIR /app
 # Copy package.json and package-lock.json to install dependencies
 COPY package*.json ./
 
-# Install all dependencies (including devDependencies for build)
-RUN npm install
+# Install production dependencies only
+RUN npm install --production
 
 # Copy the rest of the application code
 COPY . .
 
-# Run the build script to generate dist/ folder
-RUN npm start
-
-# Remove devDependencies to reduce image size
-RUN npm prune --production
-
 # Set environment variable for production
 ENV NODE_ENV=production
 
-# Expose the port the Express app runs on (default: 3000)
+# Expose the port the Express app runs on
 EXPOSE 5000
 
-# Command to run the built Express app (adjust path based on your build output)
+# Command to run the Express app
 CMD ["node", "src/server.js"]
