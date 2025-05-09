@@ -3,20 +3,31 @@ const multer = require("multer");
 const path = require("path");
 const RecipeVariant = require("../../models/recipeVariant");
 const router = express.Router();
+const cloudinary = require("cloudinary").v2;
+const fs = require("fs");
 
-console.log("recipeVariantRoutes loaded");
-
-// Set up storage for images
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
-  },
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const upload = multer({ storage: storage });
+// Temporary storage for multer (files will be deleted after Cloudinary upload)
+const uploadDir = path.join(__dirname, "../../temp");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5000000 }, // 5MB limit
+}).single("photo");
+
+console.log("recipeVariantRoutes loaded");
 
 /**
  * @swagger
@@ -48,7 +59,7 @@ const upload = multer({ storage: storage });
  *           type: array
  *           items:
  *             type: string
- *           description: Array of image URLs for the variant
+ *           description: Array of Cloudinary URLs for the variant images
  *         isArchived:
  *           type: boolean
  *           description: Indicates if the variant is archived
@@ -157,7 +168,7 @@ const upload = multer({ storage: storage });
  *               portions:
  *                 type: string
  *                 description: Comma-separated list of portion types (e.g., half-portion,medium-portion,double-portion)
-  *               photo:
+ *               photo:
  *                 type: string
  *                 format: binary
  *                 description: Image file for the variant
@@ -299,8 +310,11 @@ const upload = multer({ storage: storage });
  */
 
 // POST a new variant
-router.post("/", upload.single("photo"), async (req, res) => {
+router.post("/", upload, async (req, res) => {
   try {
+    console.log("Request body:", req.body); // Log the form fields
+    console.log("Uploaded file:", req.file); // Log the file details
+
     const { name, portions, modifiedIngredientsGroup, modifiedSteps, note } = req.body;
 
     // Validate required fields
@@ -324,7 +338,20 @@ router.post("/", upload.single("photo"), async (req, res) => {
     // Parse other fields (still JSON for now, can be updated similarly if needed)
     const parsedIngredientsGroup = modifiedIngredientsGroup ? JSON.parse(modifiedIngredientsGroup) : [];
     const parsedSteps = modifiedSteps ? JSON.parse(modifiedSteps) : [];
-    const image = req.file ? `/uploads/${req.file.filename}` : null;
+
+    let images = [];
+    if (req.file) {
+      // Upload the image to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "recipe-variants", // Store in a 'recipe-variants' folder in Cloudinary
+      });
+      images.push(result.secure_url); // Get the Cloudinary URL
+      console.log("Cloudinary upload result:", result); // Log the upload result
+
+      // Delete the temporary file
+      fs.unlinkSync(req.file.path);
+      console.log("Deleted temporary file:", req.file.path);
+    }
 
     const variant = new RecipeVariant({
       name,
@@ -332,14 +359,18 @@ router.post("/", upload.single("photo"), async (req, res) => {
       modifiedIngredientsGroup: Array.isArray(parsedIngredientsGroup) ? parsedIngredientsGroup : [],
       modifiedSteps: Array.isArray(parsedSteps) ? parsedSteps : [],
       note,
-      images: image ? [image] : [],
+      images,
     });
 
     const savedVariant = await variant.save();
     res.status(201).json(savedVariant);
   } catch (err) {
-    console.error("Error during variant creation:", err);
-    res.status(400).json({ error: err.message });
+    console.error("Error during variant creation:", err); // Log the error
+    // Clean up temporary file in case of error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -364,6 +395,20 @@ router.delete("/:id", async (req, res) => {
     if (!deletedVariant) {
       return res.status(404).json({ error: "Variant not found" });
     }
+
+    // Delete associated images from Cloudinary
+    if (deletedVariant.images && deletedVariant.images.length > 0) {
+      for (const imageUrl of deletedVariant.images) {
+        const publicId = imageUrl
+          .split("/")
+          .slice(-2)
+          .join("/")
+          .split(".")[0]; // Extract public ID from Cloudinary URL
+        await cloudinary.uploader.destroy(publicId);
+        console.log("Deleted photo from Cloudinary:", publicId);
+      }
+    }
+
     res.status(200).json({ message: "Variant deleted successfully" });
   } catch (error) {
     console.error("Error deleting variant:", error);
@@ -372,8 +417,11 @@ router.delete("/:id", async (req, res) => {
 });
 
 // PUT to update a variant
-router.put("/:id", upload.single("photo"), async (req, res) => {
+router.put("/:id", upload, async (req, res) => {
   try {
+    console.log("Request body:", req.body); // Log the form fields
+    console.log("Uploaded file:", req.file); // Log the file details
+
     const { id } = req.params;
     const { name, portions, modifiedIngredientsGroup, modifiedSteps, note } = req.body;
 
@@ -406,9 +454,39 @@ router.put("/:id", upload.single("photo"), async (req, res) => {
       note,
     };
 
-    // If a new image is uploaded, update the images array
+    const existingVariant = await RecipeVariant.findById(id);
+    if (!existingVariant) {
+      return res.status(404).json({ error: "Variant not found" });
+    }
+
+    // Handle image update
     if (req.file) {
-      updateData.images = [`/uploads/${req.file.filename}`];
+      // Delete old images from Cloudinary
+      if (existingVariant.images && existingVariant.images.length > 0) {
+        for (const imageUrl of existingVariant.images) {
+          const publicId = imageUrl
+            .split("/")
+            .slice(-2)
+            .join("/")
+            .split(".")[0]; // Extract public ID from Cloudinary URL
+          await cloudinary.uploader.destroy(publicId);
+          console.log("Deleted old photo from Cloudinary:", publicId);
+        }
+      }
+
+      // Upload new image to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "recipe-variants",
+      });
+      updateData.images = [result.secure_url]; // Update with the new Cloudinary URL
+      console.log("Cloudinary upload result:", result);
+
+      // Delete the temporary file
+      fs.unlinkSync(req.file.path);
+      console.log("Deleted temporary file:", req.file.path);
+    } else {
+      // Preserve existing images if no new photo is uploaded
+      updateData.images = existingVariant.images;
     }
 
     const updatedVariant = await RecipeVariant.findByIdAndUpdate(
@@ -420,13 +498,13 @@ router.put("/:id", upload.single("photo"), async (req, res) => {
       }
     );
 
-    if (!updatedVariant) {
-      return res.status(404).json({ error: "Variant not found" });
-    }
-
     res.status(200).json(updatedVariant);
   } catch (error) {
-    console.error("Error updating variant:", error);
+    console.error("Error updating variant:", error); // Log the error
+    // Clean up temporary file in case of error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     res.status(500).json({ error: "Failed to update variant" });
   }
 });

@@ -1,21 +1,29 @@
 const express = require("express");
 const router = express.Router();
 const Category = require("../../models/Category");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
 const Product = require("../../models/Product");
+const multer = require("multer");
+const cloudinary = require("../../cloudinary"); // Adjust path to your Cloudinary config
+const fs = require("fs");
+const path = require("path");
 
-// Crée le dossier si non existant
-const uploadDir = path.join(__dirname, "../../Uploads/category");
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Temporary storage for multer (files will be deleted after Cloudinary upload)
+const uploadDir = path.join(__dirname, "../../temp");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-// Configuration Multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
-const upload = multer({ 
+
+const upload = multer({
   storage,
   limits: { fileSize: 5000000 }, // 5MB limit
   fileFilter: (req, file, cb) => {
@@ -26,7 +34,7 @@ const upload = multer({
       return cb(null, true);
     }
     cb("Error: Images only (jpeg, jpg, png)!");
-  }
+  },
 });
 
 /**
@@ -65,7 +73,7 @@ const upload = multer({
  *           description: ID of the menu this category belongs to
  *         photo:
  *           type: string
- *           description: Path to the uploaded category image
+ *           description: Cloudinary URL of the category image
  *     Error:
  *       type: object
  *       required:
@@ -80,7 +88,7 @@ const upload = multer({
  * @swagger
  * /category/upload:
  *   post:
- *     summary: Create a new category with optional photo upload
+ *     summary: Create a new category with optional photo upload to Cloudinary
  *     tags: [Category]
  *     requestBody:
  *       required: true
@@ -142,20 +150,38 @@ router.post("/upload", upload.single("photo"), async (req, res) => {
       .json({ error: "Libelle, visibility, and menu are required fields" });
   }
 
-  const category = new Category({
-    libelle: req.body.libelle,
-    description: req.body.description,
-    visibility: req.body.visibility,
-    menu: req.body.menu,
-    photo: req.file ? `/Uploads/category/${req.file.filename}` : "",
-  });
-
   try {
+    let photoUrl = "";
+    if (req.file) {
+      // Upload the image to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "categories", // Store in a 'categories' folder in Cloudinary
+      });
+      photoUrl = result.secure_url; // Get the Cloudinary URL
+      console.log("Cloudinary upload result:", result); // Log the upload result
+
+      // Delete the temporary file
+      fs.unlinkSync(req.file.path);
+      console.log("Deleted temporary file:", req.file.path);
+    }
+
+    const category = new Category({
+      libelle: req.body.libelle,
+      description: req.body.description,
+      visibility: req.body.visibility,
+      menu: req.body.menu,
+      photo: photoUrl, // Store the Cloudinary URL
+    });
+
     const saved = await category.save();
     console.log("Saved category:", saved); // Log the saved document
     res.json(saved);
   } catch (err) {
     console.error("Error saving category:", err); // Log the error
+    // Clean up temporary file in case of error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -164,7 +190,7 @@ router.post("/upload", upload.single("photo"), async (req, res) => {
  * @swagger
  * /category/upload/{id}:
  *   put:
- *     summary: Update a category with optional photo upload
+ *     summary: Update a category with optional photo upload to Cloudinary
  *     tags: [Category]
  *     parameters:
  *       - in: path
@@ -256,20 +282,27 @@ router.put("/upload/:id", upload.single("photo"), async (req, res) => {
 
     // Handle the photo field
     if (req.file) {
-      // If a new photo is uploaded, delete the old photo file (if it exists)
+      // If a new photo is uploaded, delete the old photo from Cloudinary (if it exists)
       if (existingCategory.photo) {
-        const oldPhotoPath = path.join(
-          __dirname,
-          "../../",
-          existingCategory.photo
-        );
-        if (fs.existsSync(oldPhotoPath)) {
-          fs.unlinkSync(oldPhotoPath); // Delete the old photo file
-          console.log("Deleted old photo:", oldPhotoPath);
-        }
+        const publicId = existingCategory.photo
+          .split("/")
+          .slice(-2)
+          .join("/")
+          .split(".")[0]; // Extract public ID from Cloudinary URL
+        await cloudinary.uploader.destroy(publicId);
+        console.log("Deleted old photo from Cloudinary:", publicId);
       }
-      // Update the photo field with the new file
-      updatedFields.photo = `/Uploads/category/${req.file.filename}`;
+
+      // Upload the new photo to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "categories",
+      });
+      updatedFields.photo = result.secure_url; // Update with the new Cloudinary URL
+      console.log("Cloudinary upload result:", result);
+
+      // Delete the temporary file
+      fs.unlinkSync(req.file.path);
+      console.log("Deleted temporary file:", req.file.path);
     } else {
       // Preserve the existing photo if no new photo is uploaded
       updatedFields.photo = existingCategory.photo;
@@ -289,6 +322,10 @@ router.put("/upload/:id", upload.single("photo"), async (req, res) => {
     res.json(updated);
   } catch (err) {
     console.error("Error updating category:", err); // Log the error for debugging
+    // Clean up temporary file in case of error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -415,12 +452,15 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ error: "Category not found" });
     }
 
-    // Delete the photo file if it exists
+    // Delete the photo from Cloudinary if it exists
     if (category.photo) {
-      const photoPath = path.join(__dirname, "../../", category.photo);
-      if (fs.existsSync(photoPath)) {
-        fs.unlinkSync(photoPath);
-      }
+      const publicId = category.photo
+        .split("/")
+        .slice(-2)
+        .join("/")
+        .split(".")[0]; // Extract public ID from Cloudinary URL
+      await cloudinary.uploader.destroy(publicId);
+      console.log("Deleted photo from Cloudinary:", publicId);
     }
 
     // Cascade: Delete all products related to this category

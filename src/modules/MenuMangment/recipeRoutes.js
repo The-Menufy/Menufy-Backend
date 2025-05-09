@@ -224,50 +224,24 @@ const mongoose = require("mongoose");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const cloudinary = require("cloudinary").v2;
 
-// Helper function to parse quantity from customQuantity (e.g., "150g" -> 150)
-const parseQuantity = (customQuantity) => {
-  if (!customQuantity || typeof customQuantity !== "string") return 0;
-  const match = customQuantity.match(/(\d+(\.\d+)?)/);
-  return match ? parseFloat(match[0]) : 0;
-};
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
-// Configure multer storage for recipe images and videos
+// Temporary storage for multer (files will be deleted after Cloudinary upload)
+const tempDir = path.join(__dirname, "../../temp");
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    try {
-      const { productFK } = req.body;
-      if (!productFK) {
-        return cb(new Error("productFK is required to determine the category"));
-      }
-
-      const product = await Product.findById(productFK).populate("categoryFK");
-      if (!product || !product.categoryFK) {
-        return cb(new Error("Product or category not found"));
-      }
-
-      const categoryName = product.categoryFK.libelle
-        .toLowerCase()
-        .replace(/\s+/g, "-");
-      const uploadDir = path.join(
-        __dirname,
-        "../../Uploads",
-        categoryName,
-        "recipes"
-      );
-
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-
-      cb(null, uploadDir);
-    } catch (error) {
-      cb(error);
-    }
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
+  destination: (req, file, cb) => cb(null, tempDir),
+  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
 });
 
 const upload = multer({
@@ -275,9 +249,7 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     if (file.fieldname === "images") {
       const filetypes = /jpeg|jpg|png/;
-      const extname = filetypes.test(
-        path.extname(file.originalname).toLowerCase()
-      );
+      const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
       const mimetype = filetypes.test(file.mimetype);
       if (extname && mimetype) {
         return cb(null, true);
@@ -285,9 +257,7 @@ const upload = multer({
       cb(new Error("Images only (jpeg, jpg, png)!"));
     } else if (file.fieldname === "video") {
       const filetypes = /mp4|webm/;
-      const extname = filetypes.test(
-        path.extname(file.originalname).toLowerCase()
-      );
+      const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
       const mimetype = filetypes.test(file.mimetype);
       if (extname && mimetype) {
         return cb(null, true);
@@ -298,15 +268,31 @@ const upload = multer({
     }
   },
   limits: {
-    fileSize: 10000000,
+    fileSize: 10000000, // 10MB limit
   },
-}).fields([
-  { name: "images", maxCount: 5 },
-  { name: "video", maxCount: 1 },
-]);
+}).fields([{ name: "images", maxCount: 5 }, { name: "video", maxCount: 1 }]);
+
+// Middleware to handle multer errors
+const uploadMiddleware = (req, res, next) => {
+  upload(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ message: err.message });
+    } else if (err) {
+      return res.status(400).json({ message: err.message });
+    }
+    next();
+  });
+};
+
+// Helper function to parse quantity from customQuantity (e.g., "150g" -> 150)
+const parseQuantity = (customQuantity) => {
+  if (!customQuantity || typeof customQuantity !== "string") return 0;
+  const match = customQuantity.match(/(\d+(\.\d+)?)/);
+  return match ? parseFloat(match[0]) : 0;
+};
 
 // POST a new recipe
-router.post("/", upload, async (req, res) => {
+router.post("/", uploadMiddleware, async (req, res) => {
   try {
     console.log("Received request body:", req.body);
     console.log("Received files:", req.files);
@@ -326,21 +312,26 @@ router.post("/", upload, async (req, res) => {
     if (!nom || !temps_preparation || !temps_cuisson || !productFK) {
       return res
         .status(400)
-        .json({ message: "All required fields must be provided" });
+        .json({ message: "nom, temps_preparation, temps_cuisson, and productFK are required" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(productFK)) {
+      return res.status(400).json({ message: "Invalid productFK" });
     }
 
     const product = await Product.findById(productFK).populate("categoryFK");
     if (!product || !product.categoryFK) {
       return res.status(400).json({ message: "Product or category not found" });
     }
-    const categoryName = product.categoryFK.libelle
-      .toLowerCase()
-      .replace(/\s+/g, "-");
 
     const parsedIngredientsGroup =
       typeof ingredientsGroup === "string"
         ? JSON.parse(ingredientsGroup)
         : ingredientsGroup;
+    if (!Array.isArray(parsedIngredientsGroup)) {
+      return res.status(400).json({ message: "ingredientsGroup must be an array" });
+    }
+
     const parsedUtensils =
       typeof utensils === "string" ? JSON.parse(utensils) : utensils;
     const parsedDecoration =
@@ -383,25 +374,32 @@ router.post("/", upload, async (req, res) => {
       }
     }
 
-    const imagePaths =
-      req.files && req.files.images
-        ? req.files.images.map(
-            (file) => `/Uploads/${categoryName}/recipes/${file.filename}`
-          )
-        : [];
+    let imageUrls = [];
+    if (req.files && req.files.images) {
+      const uploadPromises = req.files.images.map((file) =>
+        cloudinary.uploader.upload(file.path, { folder: "recipes/images" })
+      );
+      const results = await Promise.all(uploadPromises);
+      imageUrls = results.map((result) => result.secure_url);
+      req.files.images.forEach((file) => fs.unlinkSync(file.path));
+    }
 
-    const videoPath =
-      req.files && req.files.video
-        ? `/Uploads/${categoryName}/recipes/${req.files.video[0].filename}`
-        : "";
+    let videoUrl = "";
+    if (req.files && req.files.video) {
+      const result = await cloudinary.uploader.upload(req.files.video[0].path, {
+        folder: "recipes/videos",
+        resource_type: "video",
+      });
+      videoUrl = result.secure_url;
+      fs.unlinkSync(req.files.video[0].path);
+    }
 
-    // Check if any ingredient's qtMax/50 is greater than the quantity used
     let shouldBeDishOfTheDay = false;
     for (const group of parsedIngredientsGroup) {
       for (const item of group.items) {
         const quantity = parseQuantity(item.customQuantity);
         const ingredient = await mongoose
-          .model("Ingredieent")
+          .model("Ingredient")
           .findById(item.ingredient);
         if (ingredient && ingredient.qtMax) {
           const adjustedQtMax = ingredient.qtMax / 50;
@@ -423,27 +421,23 @@ router.post("/", upload, async (req, res) => {
       decoration: parsedDecoration || [],
       steps: parsedSteps || [],
       productFK,
-      images: imagePaths,
-      video: videoPath,
+      images: imageUrls,
+      video: videoUrl,
       variants: parsedVariants || [],
     });
 
     const savedRecipe = await newRecipe.save();
-    console.log("Saved recipe:", savedRecipe);
-
     await Product.findByIdAndUpdate(productFK, { recipeFK: savedRecipe._id });
 
-    // If the recipe qualifies as Dish of the Day, add it to DishOfTheDay
     if (shouldBeDishOfTheDay) {
-      const existingDish = await DishOfTheDay.findOne({ productFK: productFK });
+      const existingDish = await DishOfTheDay.findOne({ productFK });
       if (!existingDish) {
         const newDish = new DishOfTheDay({
           date: new Date(),
           statut: "Active",
-          productFK: productFK,
+          productFK,
         });
         await newDish.save();
-        console.log("Automatically added to Dish of the Day:", newDish);
       }
     }
 
@@ -455,6 +449,10 @@ router.post("/", upload, async (req, res) => {
 
     res.status(201).json(populatedRecipe);
   } catch (error) {
+    if (req.files) {
+      if (req.files.images) req.files.images.forEach((file) => fs.unlinkSync(file.path));
+      if (req.files.video) req.files.video.forEach((file) => fs.unlinkSync(file.path));
+    }
     console.error("Error in recipe creation:", error);
     res
       .status(400)
@@ -463,7 +461,7 @@ router.post("/", upload, async (req, res) => {
 });
 
 // PUT /api/recipe/:id
-router.put("/:id", upload, async (req, res) => {
+router.put("/:id", uploadMiddleware, async (req, res) => {
   try {
     const {
       nom,
@@ -484,20 +482,24 @@ router.put("/:id", upload, async (req, res) => {
 
     const finalProductFK = productFK || existingRecipe.productFK;
 
+    if (finalProductFK && !mongoose.Types.ObjectId.isValid(finalProductFK)) {
+      return res.status(400).json({ message: "Invalid productFK" });
+    }
+
     if (finalProductFK) {
-      const product = await Product.findById(finalProductFK).populate(
-        "categoryFK"
-      );
+      const product = await Product.findById(finalProductFK).populate("categoryFK");
       if (!product || !product.categoryFK) {
-        return res
-          .status(400)
-          .json({ message: "Product or category not found" });
+        return res.status(400).json({ message: "Product or category not found" });
       }
     }
 
     const parsedIngredientsGroup = ingredientsGroup
       ? JSON.parse(ingredientsGroup)
       : existingRecipe.ingredientsGroup;
+    if (ingredientsGroup && !Array.isArray(parsedIngredientsGroup)) {
+      return res.status(400).json({ message: "ingredientsGroup must be an array" });
+    }
+
     const parsedUtensils = utensils
       ? JSON.parse(utensils)
       : existingRecipe.utensils;
@@ -543,26 +545,41 @@ router.put("/:id", upload, async (req, res) => {
       }
     }
 
-    const categoryName = existingRecipe.productFK
-      ? (
-          await Product.findById(existingRecipe.productFK).populate(
-            "categoryFK"
-          )
-        ).categoryFK.libelle
-          .toLowerCase()
-          .replace(/\s+/g, "-")
-      : "default";
-    const imagePaths =
-      req.files && req.files.images
-        ? req.files.images.map(
-            (file) => `/Uploads/${categoryName}/recipes/${file.filename}`
-          )
-        : existingRecipe.images;
+    let imageUrls = [...existingRecipe.images];
+    if (req.files && req.files.images) {
+      const uploadPromises = req.files.images.map((file) =>
+        cloudinary.uploader.upload(file.path, { folder: "recipes/images" })
+      );
+      const results = await Promise.all(uploadPromises);
+      imageUrls = results.map((result) => result.secure_url);
+      req.files.images.forEach((file) => fs.unlinkSync(file.path));
+      // Delete old images from Cloudinary
+      if (existingRecipe.images.length > 0) {
+        const publicIds = existingRecipe.images.map((url) =>
+          url.split("/").slice(-2).join("/").split(".")[0]
+        );
+        await cloudinary.api.delete_resources(publicIds, { resource_type: "image" });
+      }
+    }
 
-    const videoPath =
-      req.files && req.files.video
-        ? `/Uploads/${categoryName}/recipes/${req.files.video[0].filename}`
-        : existingRecipe.video;
+    let videoUrl = existingRecipe.video;
+    if (req.files && req.files.video) {
+      const result = await cloudinary.uploader.upload(req.files.video[0].path, {
+        folder: "recipes/videos",
+        resource_type: "video",
+      });
+      videoUrl = result.secure_url;
+      fs.unlinkSync(req.files.video[0].path);
+      // Delete old video from Cloudinary
+      if (existingRecipe.video) {
+        const publicId = existingRecipe.video
+          .split("/")
+          .slice(-2)
+          .join("/")
+          .split(".")[0];
+        await cloudinary.uploader.destroy(publicId, { resource_type: "video" });
+      }
+    }
 
     const updateData = {
       nom: nom || existingRecipe.nom,
@@ -573,8 +590,8 @@ router.put("/:id", upload, async (req, res) => {
       decoration: parsedDecoration,
       steps: parsedSteps,
       productFK: finalProductFK,
-      images: imagePaths,
-      video: videoPath,
+      images: imageUrls,
+      video: videoUrl,
       variants: parsedVariants,
     };
 
@@ -596,6 +613,10 @@ router.put("/:id", upload, async (req, res) => {
 
     res.status(200).json(populatedRecipe);
   } catch (error) {
+    if (req.files) {
+      if (req.files.images) req.files.images.forEach((file) => fs.unlinkSync(file.path));
+      if (req.files.video) req.files.video.forEach((file) => fs.unlinkSync(file.path));
+    }
     console.error("Error updating recipe:", error);
     res
       .status(400)
@@ -622,6 +643,9 @@ router.get("/", async (req, res) => {
 // GET single recipe
 router.get("/:id", async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: "Invalid recipe ID" });
+    }
     const recipe = await Recipe.findById(req.params.id)
       .populate("productFK", "name price")
       .populate("ingredientsGroup.items.ingredient", "libelle photo")
@@ -642,6 +666,9 @@ router.get("/:id", async (req, res) => {
 // DELETE a recipe
 router.delete("/:id", async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: "Invalid recipe ID" });
+    }
     const deletedRecipe = await Recipe.findByIdAndDelete(req.params.id);
     if (!deletedRecipe) {
       return res.status(404).json({ message: "Recipe not found" });
@@ -651,22 +678,20 @@ router.delete("/:id", async (req, res) => {
       recipeFK: null,
     });
 
-    if (deletedRecipe.images && deletedRecipe.images.length > 0) {
-      deletedRecipe.images.forEach((imagePath) => {
-        const filePath = path.join(__dirname, "../../", imagePath);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-          console.log(`Deleted image: ${filePath}`);
-        }
-      });
+    // Delete images and video from Cloudinary
+    if (deletedRecipe.images.length > 0) {
+      const publicIds = deletedRecipe.images.map((url) =>
+        url.split("/").slice(-2).join("/").split(".")[0]
+      );
+      await cloudinary.api.delete_resources(publicIds, { resource_type: "image" });
     }
-
     if (deletedRecipe.video) {
-      const videoPath = path.join(__dirname, "../../", deletedRecipe.video);
-      if (fs.existsSync(videoPath)) {
-        fs.unlinkSync(videoPath);
-        console.log(`Deleted video: ${videoPath}`);
-      }
+      const publicId = deletedRecipe.video
+        .split("/")
+        .slice(-2)
+        .join("/")
+        .split(".")[0];
+      await cloudinary.uploader.destroy(publicId, { resource_type: "video" });
     }
 
     // Remove from DishOfTheDay if it exists

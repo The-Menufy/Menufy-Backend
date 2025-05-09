@@ -1,9 +1,89 @@
+const express = require("express");
+const router = express.Router();
+const Product = require("../../models/Product");
+const Ingredient = require("../../models/Ingredieent"); // Fixed typo: "Ingredieent" -> "Ingredient"
+const DishOfTheDay = require("../../models/DishOfTheDay");
+const Recipe = require("../../models/Recipe");
+const Category = require("../../models/Category");
+const mongoose = require("mongoose");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const cloudinary = require("cloudinary").v2;
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Temporary storage for multer (files will be deleted after Cloudinary upload)
+const uploadDir = path.join(__dirname, "../../temp");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5000000 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png/;
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = filetypes.test(file.mimetype);
+    if (extname && mimetype) {
+      return cb(null, true);
+    }
+    cb(new Error("Images only (jpeg, jpg, png) allowed!"));
+  },
+}).single("photo");
+
+// Middleware to handle multer errors
+const uploadMiddleware = (req, res, next) => {
+  upload(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ error: err.message });
+    } else if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+};
+
+// Define valid typePlat values (can be moved to Product model as an enum)
+const VALID_TYPE_PLATS = ["vegetarian", "vegan", "gluten-free", "dairy-free", "non-vegetarian"];
+
+// Validate category, typePlat, and price
+const validateInputs = async (categoryFK, typePlat, price) => {
+  if (!mongoose.Types.ObjectId.isValid(categoryFK)) {
+    throw new Error("Invalid category ID");
+  }
+  const category = await Category.findById(categoryFK);
+  if (!category) {
+    throw new Error("Category not found");
+  }
+  if (!VALID_TYPE_PLATS.includes(typePlat)) {
+    throw new Error(`Invalid typePlat. Must be one of: ${VALID_TYPE_PLATS.join(", ")}`);
+  }
+  if (price <= 0) {
+    throw new Error("Price must be greater than 0");
+  }
+};
+
 /**
  * @swagger
  * tags:
  *   - name: Product
  *     description: Product management operations
- *
+ */
+
+/**
+ * @swagger
  * components:
  *   schemas:
  *     Product:
@@ -43,7 +123,7 @@
  *           description: Type of dish
  *         photo:
  *           type: string
- *           description: Product image URL
+ *           description: Cloudinary URL of the product image
  *         archived:
  *           type: boolean
  *           description: Product archival status
@@ -81,10 +161,18 @@
  *           description: Maximum quantity
  *         photo:
  *           type: string
- *           description: Ingredient image URL
+ *           description: Cloudinary URL of the ingredient image
  *         archived:
  *           type: boolean
  *           description: Ingredient archival status
+ *     Error:
+ *       type: object
+ *       required:
+ *         - error
+ *       properties:
+ *         error:
+ *           type: string
+ *           description: Error message describing the issue
  */
 
 /**
@@ -107,23 +195,32 @@
  *             properties:
  *               name:
  *                 type: string
+ *                 description: Product name
  *               price:
  *                 type: number
+ *                 description: Product price
  *               description:
  *                 type: string
+ *                 description: Product description
  *               promotion:
  *                 type: string
+ *                 description: Promotion details
  *               disponibility:
  *                 type: boolean
+ *                 description: Product availability status
  *               duration:
  *                 type: string
+ *                 description: Product duration
  *               categoryFK:
  *                 type: string
+ *                 description: Foreign key for category
  *               typePlat:
  *                 type: string
+ *                 description: Type of dish
  *               photo:
  *                 type: string
  *                 format: binary
+ *                 description: Product image file (jpeg, jpg, png; max 5MB)
  *     responses:
  *       201:
  *         description: Product created successfully
@@ -136,12 +233,79 @@
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.post("/", uploadMiddleware, async (req, res) => {
+  try {
+    const {
+      name,
+      price,
+      description,
+      promotion,
+      disponibility,
+      duration,
+      categoryFK,
+      typePlat,
+    } = req.body;
+
+    if (!name || !price || !categoryFK || !typePlat) {
+      return res
+        .status(400)
+        .json({ error: "Name, price, category, and typePlat are required" });
+    }
+
+    const parsedPrice = parseFloat(price);
+    await validateInputs(categoryFK, typePlat, parsedPrice);
+
+    let photo = null;
+    if (req.file) {
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "products", // Store in a 'products' folder in Cloudinary
+      });
+      photo = result.secure_url; // Use the Cloudinary URL
+      fs.unlinkSync(req.file.path); // Clean up temporary file
+    }
+
+    const productData = {
+      name,
+      price: parsedPrice,
+      description,
+      promotion,
+      disponibility: disponibility === "true",
+      duration,
+      categoryFK,
+      typePlat,
+      photo,
+      archived: false,
+    };
+
+    const product = new Product(productData);
+    const savedProduct = await product.save();
+
+    const populatedProduct = await Product.findById(savedProduct._id)
+      .populate("categoryFK")
+      .populate("recipeFK");
+
+    res.status(201).json(populatedProduct);
+  } catch (error) {
+    // Clean up temporary file in case of error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    const status = error.message.includes("Invalid") ? 400 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /product:
  *   get:
  *     summary: Get all products (excluding dish of the day)
  *     tags: [Product]
@@ -156,7 +320,25 @@
  *                 $ref: '#/components/schemas/Product'
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
+router.get("/", async (req, res) => {
+  try {
+    const dishOfTheDayProducts = await DishOfTheDay.find().distinct("productFK");
+    const products = await Product.find({
+      _id: { $nin: dishOfTheDayProducts },
+      archived: false,
+    })
+      .populate("categoryFK")
+      .populate("recipeFK");
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 /**
  * @swagger
@@ -178,10 +360,45 @@
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Product'
+ *       400:
+ *         description: Invalid product ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       404:
  *         description: Product not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.get("/:id", async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: "Invalid product ID" });
+    }
+
+    const product = await Product.findById(req.params.id)
+      .populate("categoryFK")
+      .populate("recipeFK");
+
+    if (!product) return res.status(404).json({ error: "Product not found" });
+    res.json(product);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /product/{id}:
  *   put:
  *     summary: Update a product with image upload
  *     tags: [Product]
@@ -206,25 +423,35 @@
  *             properties:
  *               name:
  *                 type: string
+ *                 description: Product name
  *               price:
  *                 type: number
+ *                 description: Product price
  *               description:
  *                 type: string
+ *                 description: Product description
  *               promotion:
  *                 type: string
+ *                 description: Promotion details
  *               disponibility:
  *                 type: boolean
+ *                 description: Product availability status
  *               duration:
  *                 type: string
+ *                 description: Product duration
  *               categoryFK:
  *                 type: string
+ *                 description: Foreign key for category
  *               typePlat:
  *                 type: string
+ *                 description: Type of dish
  *               archived:
  *                 type: boolean
+ *                 description: Product archival status
  *               photo:
  *                 type: string
  *                 format: binary
+ *                 description: Product image file (jpeg, jpg, png; max 5MB)
  *     responses:
  *       200:
  *         description: Product updated successfully
@@ -234,10 +461,107 @@
  *               $ref: '#/components/schemas/Product'
  *       400:
  *         description: Invalid input or upload error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       404:
  *         description: Product not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.put("/:id", uploadMiddleware, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: "Invalid product ID" });
+    }
+
+    const {
+      name,
+      price,
+      description,
+      promotion,
+      disponibility,
+      duration,
+      categoryFK,
+      typePlat,
+    } = req.body;
+
+    if (!name || !price || !categoryFK || !typePlat) {
+      return res
+        .status(400)
+        .json({ error: "Name, price, category, and typePlat are required" });
+    }
+
+    const parsedPrice = parseFloat(price);
+    await validateInputs(categoryFK, typePlat, parsedPrice);
+
+    const existingProduct = await Product.findById(req.params.id);
+    if (!existingProduct)
+      return res.status(404).json({ error: "Product not found" });
+
+    const updateData = {
+      name,
+      price: parsedPrice,
+      description,
+      promotion,
+      disponibility: disponibility === "true",
+      duration,
+      categoryFK,
+      typePlat,
+      archived: req.body.archived
+        ? req.body.archived === "true"
+        : existingProduct.archived,
+    };
+
+    if (req.file) {
+      if (existingProduct.photo) {
+        const publicId = existingProduct.photo
+          .split("/")
+          .slice(-2)
+          .join("/")
+          .split(".")[0]; // Extract public ID from Cloudinary URL
+        await cloudinary.uploader.destroy(publicId);
+      }
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "products",
+      });
+      updateData.photo = result.secure_url; // Update with the new Cloudinary URL
+      fs.unlinkSync(req.file.path); // Clean up temporary file
+    } else {
+      updateData.photo = existingProduct.photo;
+    }
+
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true }
+    )
+      .populate("categoryFK")
+      .populate("recipeFK");
+
+    res.json(updatedProduct);
+  } catch (error) {
+    // Clean up temporary file in case of error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    const status = error.message.includes("Invalid") ? 400 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /product/{id}:
  *   delete:
  *     summary: Delete a product (cascades to dish of the day and recipe)
  *     tags: [Product]
@@ -258,11 +582,55 @@
  *               properties:
  *                 message:
  *                   type: string
+ *                   description: Confirmation message
+ *       400:
+ *         description: Invalid product ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       404:
  *         description: Product not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
+router.delete("/:id", async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: "Invalid product ID" });
+    }
+
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    if (product.photo) {
+      const publicId = product.photo
+        .split("/")
+        .slice(-2)
+        .join("/")
+        .split(".")[0]; // Extract public ID from Cloudinary URL
+      await cloudinary.uploader.destroy(publicId);
+    }
+
+    if (product.recipeFK) {
+      await Recipe.findByIdAndDelete(product.recipeFK);
+    }
+
+    await DishOfTheDay.deleteMany({ productFK: product._id });
+    await Product.findByIdAndDelete(req.params.id);
+    res.json({ message: "Product deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 /**
  * @swagger
@@ -287,15 +655,63 @@
  *               properties:
  *                 message:
  *                   type: string
+ *                   description: Confirmation message
  *                 product:
  *                   $ref: '#/components/schemas/Product'
  *       400:
- *         description: Product already archived
+ *         description: Invalid product ID or product already archived
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       404:
  *         description: Product not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Server error
- *
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.put("/:id/archive", async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: "Invalid product ID" });
+    }
+
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    if (product.archived) {
+      return res.status(400).json({ error: "Product is already archived" });
+    }
+
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.id,
+      { archived: true },
+      { new: true }
+    )
+      .populate("categoryFK")
+      .populate("recipeFK");
+
+    res.json({
+      message: "Product archived successfully",
+      product: updatedProduct,
+    });
+  } catch (error) {
+    const status = error.message.includes("Invalid") ? 400 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
  * /product/{id}/restore:
  *   put:
  *     summary: Restore an archived product
@@ -317,15 +733,60 @@
  *               properties:
  *                 message:
  *                   type: string
+ *                   description: Confirmation message
  *                 product:
  *                   $ref: '#/components/schemas/Product'
  *       400:
- *         description: Product not archived
+ *         description: Invalid product ID or product not archived
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       404:
  *         description: Product not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
+router.put("/:id/restore", async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: "Invalid product ID" });
+    }
+
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    if (!product.archived) {
+      return res.status(400).json({ error: "Product is not archived" });
+    }
+
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.id,
+      { archived: false },
+      { new: true }
+    )
+      .populate("categoryFK")
+      .populate("recipeFK");
+
+    res.json({
+      message: "Product restored successfully",
+      product: updatedProduct,
+    });
+  } catch (error) {
+    const status = error.message.includes("Invalid") ? 400 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
 
 /**
  * @swagger
@@ -356,348 +817,25 @@
  *                         type: array
  *                         items:
  *                           $ref: '#/components/schemas/Ingredient'
+ *       400:
+ *         description: Invalid category ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       404:
  *         description: Category not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-const express = require("express");
-const router = express.Router();
-const Product = require("../../models/Product");
-const Ingredient = require("../../models/Ingredieent");
-const DishOfTheDay = require("../../models/DishOfTheDay");
-const Recipe = require("../../models/Recipe");
-const Category = require("../../models/Category"); // Assuming Category model exists
-const mongoose = require("mongoose");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
-
-// Configure multer storage
-const uploadDir = path.join(__dirname, "../../uploads/products");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5000000 },
-  fileFilter: (req, file, cb) => {
-    const filetypes = /jpeg|jpg|png/;
-    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = filetypes.test(file.mimetype);
-    if (extname && mimetype) {
-      return cb(null, true);
-    }
-    cb(new Error("Images only (jpeg, jpg, png) allowed!"));
-  },
-}).single("photo");
-
-// Middleware to handle multer errors
-const uploadMiddleware = (req, res, next) => {
-  upload(req, res, (err) => {
-    if (err instanceof multer.MulterError) {
-      return res.status(400).json({ error: err.message });
-    } else if (err) {
-      return res.status(400).json({ error: err.message });
-    }
-    next();
-  });
-};
-
-// Validate category and typePlat
-const validateInputs = async (categoryFK, typePlat) => {
-  if (!mongoose.Types.ObjectId.isValid(categoryFK)) {
-    throw new Error("Invalid category ID");
-  }
-  const category = await Category.findById(categoryFK);
-  if (!category) {
-    throw new Error("Category not found");
-  }
-  const validTypePlats = ['vegetarian', 'vegan', 'gluten-free', 'dairy-free', 'non-vegetarian']; // Adjust based on your requirements
-  if (!validTypePlats.includes(typePlat)) {
-    throw new Error("Invalid typePlat");
-  }
-};
-
-// Create new product
-router.post("/", uploadMiddleware, async (req, res) => {
-  try {
-    const {
-      name,
-      price,
-      description,
-      promotion,
-      disponibility,
-      duration,
-      categoryFK,
-      typePlat,
-    } = req.body;
-
-    if (!name || !price || !categoryFK || !typePlat) {
-      return res
-        .status(400)
-        .json({ error: "Name, price, category, and typePlat are required" });
-    }
-
-    await validateInputs(categoryFK, typePlat);
-
-    const productData = {
-      name,
-      price: parseFloat(price),
-      description,
-      promotion,
-      disponibility: disponibility === "true",
-      duration,
-      categoryFK,
-      typePlat,
-      photo: req.file ? `/Uploads/products/${req.file.filename}` : null,
-      archived: false,
-    };
-
-    const product = new Product(productData);
-    const savedProduct = await product.save();
-    
-    const populatedProduct = await Product.findById(savedProduct._id)
-      .populate("categoryFK")
-      .populate("recipeFK")
-      .catch((err) => {
-        throw new Error("Error populating product data: " + err.message);
-      });
-
-    res.status(201).json(populatedProduct);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Get all products (exclude those in DishOfTheDay)
-router.get("/", async (req, res) => {
-  try {
-    const dishOfTheDayProducts = await DishOfTheDay.find().distinct("productFK");
-    const products = await Product.find({
-      _id: { $nin: dishOfTheDayProducts },
-      archived: false,
-    })
-      .populate("categoryFK")
-      .populate("recipeFK")
-      .catch((err) => {
-        throw new Error("Error populating products: " + err.message);
-      });
-    res.json(products);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get single product
-router.get("/:id", async (req, res) => {
-  try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid product ID" });
-    }
-
-    const product = await Product.findById(req.params.id)
-      .populate("categoryFK")
-      .populate("recipeFK")
-      .catch((err) => {
-        throw new Error("Error populating product: " + err.message);
-      });
-
-    if (!product) return res.status(404).json({ error: "Product not found" });
-    res.json(product);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Update product
-router.put("/:id", uploadMiddleware, async (req, res) => {
-  try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid product ID" });
-    }
-
-    const {
-      name,
-      price,
-      description,
-      promotion,
-      disponibility,
-      duration,
-      categoryFK,
-      typePlat,
-    } = req.body;
-
-    if (!name || !price || !categoryFK || !typePlat) {
-      return res
-        .status(400)
-        .json({ error: "Name, price, category, and typePlat are required" });
-    }
-
-    await validateInputs(categoryFK, typePlat);
-
-    const existingProduct = await Product.findById(req.params.id);
-    if (!existingProduct)
-      return res.status(404).json({ error: "Product not found" });
-
-    const updateData = {
-      name,
-      price: parseFloat(price),
-      description,
-      promotion,
-      disponibility: disponibility === "true",
-      duration,
-      categoryFK,
-      typePlat,
-      archived: req.body.archived
-        ? req.body.archived === "true"
-        : existingProduct.archived,
-    };
-
-    if (req.file) {
-      if (existingProduct.photo) {
-        const oldPhotoPath = path.join(__dirname, "../../", existingProduct.photo);
-        try {
-          if (fs.existsSync(oldPhotoPath)) {
-            fs.unlinkSync(oldPhotoPath);
-          }
-        } catch (err) {
-          console.error("Error deleting old photo:", err);
-        }
-      }
-      updateData.photo = `/Uploads/products/${req.file.filename}`;
-    } else {
-      updateData.photo = existingProduct.photo;
-    }
-
-    const updatedProduct = await Product.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true }
-    )
-      .populate("categoryFK")
-      . EVENESScatch((err) => {
-        throw new Error("Error populating updated product: " + err.message);
-      });
-
-    res.json(updatedProduct);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Delete product
-router.delete("/:id", async (req, res) => {
-  try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid product ID" });
-    }
-
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ error: "Product not found" });
-
-    if (product.photo) {
-      const photoPath = path.join(__dirname, "../../", product.photo);
-      try {
-        if (fs.existsSync(photoPath)) {
-          fs.unlinkSync(photoPath);
-        }
-      } catch (err) {
-        console.error("Error deleting photo:", err);
-      }
-    }
-
-    if (product.recipeFK) {
-      await Recipe.findByIdAndDelete(product.recipeFK);
-    }
-
-    await DishOfTheDay.deleteMany({ productFK: product._id });
-    await Product.findByIdAndDelete(req.params.id);
-    res.json({ message: "Product deleted successfully" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Archive product
-router.put("/:id/archive", async (req, res) => {
-  try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid product ID" });
-    }
-
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-      return res.status(404).json({ error: "Product not found" });
-    }
-
-    if (product.archived) {
-      return res.status(400).json({ error: "Product is already archived" });
-    }
-
-    const updatedProduct = await Product.findByIdAndUpdate(
-      req.params.id,
-      { archived: true },
-      { new: true }
-    )
-      .populate("categoryFK")
-      .populate("recipeFK")
-      .catch((err) => {
-        throw new Error("Error populating archived product: " + err.message);
-      });
-
-    res.json({
-      message: "Product archived successfully",
-      product: updatedProduct,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Restore product
-router.put("/:id/restore", async (req, res) => {
-  try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: "Invalid product ID" });
-    }
-
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-      return res.status(404).json({ error: "Product not found" });
-    }
-
-    if (!product.archived) {
-      return res.status(400).json({ error: "Product is not archived" });
-    }
-
-    const updatedProduct = await Product.findByIdAndUpdate(
-      req.params.id,
-      { archived: false },
-      { new: true }
-    )
-      .populate("categoryFK")
-      .populate("recipeFK")
-      .catch((err) => {
-        throw new Error("Error populating restored product: " + err.message);
-      });
-
-    res.json({
-      message: "Product restored successfully",
-      product: updatedProduct,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get products by category
 router.get("/category/:categoryId", async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.categoryId)) {
@@ -716,10 +854,7 @@ router.get("/category/:categoryId", async (req, res) => {
       archived: false,
     })
       .populate("categoryFK")
-      .populate("recipeFK")
-      .catch((err) => {
-        throw new Error("Error populating products: " + err.message);
-      });
+      .populate("recipeFK");
 
     const productsWithDetails = await Promise.all(
       products.map(async (product) => {
@@ -733,7 +868,8 @@ router.get("/category/:categoryId", async (req, res) => {
 
     res.json(productsWithDetails);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const status = error.message.includes("Invalid") ? 400 : 500;
+    res.status(status).json({ error: error.message });
   }
 });
 

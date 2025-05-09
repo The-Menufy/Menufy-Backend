@@ -2,21 +2,13 @@ const express = require("express");
 const router = express.Router();
 const Menu = require("../../models/Menu");
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+const path = require("path"); // Added path import
+const cloudinary = require("../../cloudinary"); // Adjust path to your Cloudinary config
 const Category = require("../../models/Category");
 const Product = require("../../models/Product");
 
-// Configure multer storage
-const uploadDir = path.join(__dirname, "../../Uploads/menus");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
-});
-
-// Initialize upload
+// Configure multer for in-memory storage
+const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
   limits: { fileSize: 5000000 }, // 5MB limit
@@ -57,7 +49,7 @@ const upload = multer({
  *           description: Name of the menu
  *         photo:
  *           type: string
- *           description: Path to the uploaded menu image
+ *           description: URL of the menu image hosted on Cloudinary
  *         visibility:
  *           type: string
  *           description: Visibility status of the menu (e.g., public, private)
@@ -81,7 +73,7 @@ const upload = multer({
  * @swagger
  * /menu:
  *   post:
- *     summary: Create a new menu with optional image upload
+ *     summary: Create a new menu with optional image upload to Cloudinary
  *     tags: [Menu]
  *     requestBody:
  *       required: true
@@ -131,12 +123,29 @@ router.post("/", upload, async (req, res) => {
         .json({ error: "Name, visibility, and rate are required" });
     }
 
+    let photoUrl = null;
+    if (req.file) {
+      // Upload image to Cloudinary
+      const result = await new Promise((resolve, reject) => {
+        cloudinary.uploader
+          .upload_stream(
+            { folder: "menus" }, // Organize images in 'menus' folder
+            (error, result) => {
+              if (error) return reject(error);
+              resolve(result);
+            }
+          )
+          .end(req.file.buffer);
+      });
+      photoUrl = result.secure_url; // Store Cloudinary URL
+    }
+
     const menuData = {
       name,
-      photo: req.file ? `/Uploads/menus/${req.file.filename}` : null,
+      photo: photoUrl,
       visibility,
       rate: parseInt(rate),
-      archived: false, // Automatically set to not archived
+      archived: false,
     };
 
     const menu = new Menu(menuData);
@@ -230,7 +239,7 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /menu/{id}:
  *   put:
- *     summary: Update a menu with optional image upload
+ *     summary: Update a menu with optional image upload to Cloudinary
  *     tags: [Menu]
  *     parameters:
  *       - in: path
@@ -304,15 +313,29 @@ router.put("/:id", upload, async (req, res) => {
     };
 
     if (req.file) {
-      // Delete old photo if exists
+      // Upload new image to Cloudinary
+      const result = await new Promise((resolve, reject) => {
+        cloudinary.uploader
+          .upload_stream(
+            { folder: "menus" }, // Organize images in 'menus' folder
+            (error, result) => {
+              if (error) return reject(error);
+              resolve(result);
+            }
+          )
+          .end(req.file.buffer);
+      });
+      updateData.photo = result.secure_url; // Update with new Cloudinary URL
+
+      // Delete old image from Cloudinary if exists
       const existingMenu = await Menu.findById(req.params.id);
       if (existingMenu && existingMenu.photo) {
-        const oldPhotoPath = path.join(__dirname, "../../", existingMenu.photo);
-        if (fs.existsSync(oldPhotoPath)) {
-          fs.unlinkSync(oldPhotoPath);
-        }
+        const publicId = existingMenu.photo
+          .split("/")
+          .pop()
+          .split(".")[0]; // Extract public ID from URL
+        await cloudinary.uploader.destroy(`menus/${publicId}`);
       }
-      updateData.photo = `/Uploads/menus/${req.file.filename}`;
     }
 
     const menu = await Menu.findByIdAndUpdate(req.params.id, updateData, {
@@ -372,12 +395,13 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ error: "Menu not found" });
     }
 
-    // Delete photo if exists
+    // Delete menu image from Cloudinary if exists
     if (menu.photo) {
-      const photoPath = path.join(__dirname, "../../", menu.photo);
-      if (fs.existsSync(photoPath)) {
-        fs.unlinkSync(photoPath);
-      }
+      const publicId = menu.photo
+        .split("/")
+        .pop()
+        .split(".")[0]; // Extract public ID from URL
+      await cloudinary.uploader.destroy(`menus/${publicId}`);
     }
 
     // Cascade delete: Find all categories linked to this menu
@@ -385,12 +409,13 @@ router.delete("/:id", async (req, res) => {
     for (const category of categories) {
       // Cascade: Delete all products related to this category
       await Product.deleteMany({ categoryFK: category._id });
-      // Delete category photo if exists
+      // Delete category photo from Cloudinary if exists
       if (category.photo) {
-        const catPhotoPath = path.join(__dirname, "../../", category.photo);
-        if (fs.existsSync(catPhotoPath)) {
-          fs.unlinkSync(catPhotoPath);
-        }
+        const catPublicId = category.photo
+          .split("/")
+          .pop()
+          .split(".")[0]; // Extract public ID from URL
+        await cloudinary.uploader.destroy(`categories/${catPublicId}`);
       }
       // Delete the category itself
       await Category.findByIdAndDelete(category._id);
