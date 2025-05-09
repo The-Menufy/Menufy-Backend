@@ -12,7 +12,7 @@ const recipeIngredientRoutes = require("./modules/recipeIngredient.routes");
 const analyzeNutritionRoute = require("./modules/Nutrition/analyzeNutrition");
 const recipeVariantRoutes = require("./modules/MenuMangment/recipeVariantRoutes");
 const setupSwagger = require("./swagger"); // Adjust path if needed
-
+require('dotenv').config();
 const PORT = process.env.PORT || 5000;
 
 // 🔗 Connexion à MongoDB
@@ -24,9 +24,9 @@ setupSwagger(app); // <-- Add this before app.listen
 app.use(cors({ origin: "*", methods: "*", credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use("/uploads", express.static("uploads")); // Serve the uploads directory
+//app.use("/uploads", express.static("uploads")); // Serve the uploads directory
 // ✅ Static Files
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+//app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ✅ Routes
 app.use("/api/auth", require("@modules/auth/routes"));

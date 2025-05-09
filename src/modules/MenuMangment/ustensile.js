@@ -4,9 +4,17 @@ const Ustensile = require("../../models/Ustensile");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const cloudinary = require("cloudinary").v2;
 
-// Configure multer storage
-const uploadDir = path.join(__dirname, "../../uploads/ustensiles");
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Temporary storage for multer (files will be deleted after Cloudinary upload)
+const uploadDir = path.join(__dirname, "../../temp");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
@@ -63,7 +71,7 @@ const upload = multer({
  *           description: Availability status of the utensil
  *         photo:
  *           type: string
- *           description: Path to the uploaded utensil image
+ *           description: Cloudinary URL of the uploaded utensil image
  *         archived:
  *           type: boolean
  *           description: Indicates if the utensil is archived
@@ -135,11 +143,22 @@ router.post("/", upload, async (req, res) => {
       return res.status(400).json({ error: "Libelle, quantity, and disponibility are required" });
     }
 
+    let photo = null;
+    if (req.file) {
+      // Upload to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "ustensiles", // Store in a 'ustensiles' folder in Cloudinary
+      });
+      photo = result.secure_url; // Use the Cloudinary URL
+      // Delete the temporary file
+      fs.unlinkSync(req.file.path);
+    }
+
     const ustensileData = {
       libelle,
       quantity: parseFloat(quantity),
       disponibility: disponibility === "true",
-      photo: req.file ? `/Uploads/ustensiles/${req.file.filename}` : null,
+      photo,
       archived: false,
     };
     const ustensile = new Ustensile(ustensileData);
@@ -147,6 +166,10 @@ router.post("/", upload, async (req, res) => {
     res.status(201).json(savedUstensile);
   } catch (error) {
     console.error("Error creating utensil:", error);
+    // Clean up temporary file in case of error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     res.status(400).json({ error: error.message });
   }
 });
@@ -310,19 +333,29 @@ router.put("/:id", upload, async (req, res) => {
       archived: req.body.archived ? req.body.archived === "true" : undefined,
     };
 
+    const existingUstensile = await Ustensile.findById(req.params.id);
+    if (!existingUstensile) {
+      return res.status(404).json({ error: "Ustensile not found" });
+    }
+
     if (req.file) {
-      const existingUstensile = await Ustensile.findById(req.params.id);
-      if (existingUstensile && existingUstensile.photo) {
-        const oldPhotoPath = path.join(
-          __dirname,
-          "../../",
-          existingUstensile.photo
-        );
-        if (fs.existsSync(oldPhotoPath)) {
-          fs.unlinkSync(oldPhotoPath);
-        }
+      // Delete old image from Cloudinary if it exists
+      if (existingUstensile.photo) {
+        const publicId = existingUstensile.photo
+          .split("/")
+          .slice(-2)
+          .join("/")
+          .split(".")[0]; // Extract public ID from Cloudinary URL
+        await cloudinary.uploader.destroy(publicId);
       }
-      updateData.photo = `/Uploads/ustensiles/${req.file.filename}`;
+
+      // Upload new image to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "ustensiles",
+      });
+      updateData.photo = result.secure_url; // Update with the new Cloudinary URL
+      // Delete the temporary file
+      fs.unlinkSync(req.file.path);
     }
 
     const ustensile = await Ustensile.findByIdAndUpdate(
@@ -330,12 +363,13 @@ router.put("/:id", upload, async (req, res) => {
       updateData,
       { new: true }
     );
-    if (!ustensile) {
-      return res.status(404).json({ error: "Ustensile not found" });
-    }
     res.json(ustensile);
   } catch (error) {
     console.error("Error updating utensil:", error);
+    // Clean up temporary file in case of error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     res.status(400).json({ error: error.message });
   }
 });
@@ -385,10 +419,12 @@ router.delete("/:id", async (req, res) => {
     }
 
     if (ustensile.photo) {
-      const photoPath = path.join(__dirname, "../../", ustensile.photo);
-      if (fs.existsSync(photoPath)) {
-        fs.unlinkSync(photoPath);
-      }
+      const publicId = ustensile.photo
+        .split("/")
+        .slice(-2)
+        .join("/")
+        .split(".")[0]; // Extract public ID from Cloudinary URL
+      await cloudinary.uploader.destroy(publicId);
     }
 
     await Ustensile.findByIdAndDelete(req.params.id);

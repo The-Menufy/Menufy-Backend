@@ -1,12 +1,20 @@
 const express = require("express");
 const router = express.Router();
-const Ingredient = require("../../models/Ingredieent");
+const Ingredient = require("../../models/Ingredieent"); // Note: Typo in 'Ingredieent', should be 'Ingredient'
 const multer = require("multer");
-const path = require("path");
+const cloudinary = require("../../cloudinary"); // Adjust path to your Cloudinary config
 const fs = require("fs");
+const path = require("path");
 
-// Configure multer storage
-const uploadDir = path.join(__dirname, "../../uploads/ingredients");
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Temporary storage for multer (files will be deleted after Cloudinary upload)
+const uploadDir = path.join(__dirname, "../../temp");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
@@ -15,15 +23,12 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({
-  storage: storage,
+  storage,
   limits: { fileSize: 5000000 }, // 5MB limit
   fileFilter: (req, file, cb) => {
     const filetypes = /jpeg|jpg|png/;
-    const extname = filetypes.test(
-      path.extname(file.originalname).toLowerCase()
-    );
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = filetypes.test(file.mimetype);
-
     if (extname && mimetype) {
       return cb(null, true);
     }
@@ -75,7 +80,7 @@ const upload = multer({
  *           description: Maximum quantity allowed for the ingredient
  *         photo:
  *           type: string
- *           description: Path to the uploaded ingredient image
+ *           description: Cloudinary URL of the ingredient image
  *         archived:
  *           type: boolean
  *           description: Indicates if the ingredient is archived
@@ -93,7 +98,7 @@ const upload = multer({
  * @swagger
  * /ingredient:
  *   post:
- *     summary: Create a new ingredient with optional image upload
+ *     summary: Create a new ingredient with optional image upload to Cloudinary
  *     tags: [Ingredient]
  *     requestBody:
  *       required: true
@@ -153,10 +158,27 @@ const upload = multer({
  */
 router.post("/", upload, async (req, res) => {
   try {
+    console.log("Request body:", req.body); // Log the form fields
+    console.log("Uploaded file:", req.file); // Log the file details
+
     // Validate required fields
     const { libelle, quantity, type, price, disponibility, qtMax } = req.body;
     if (!libelle || quantity === undefined || !type || price === undefined || disponibility === undefined || qtMax === undefined) {
       return res.status(400).json({ error: "Libelle, quantity, type, price, disponibility, and qtMax are required" });
+    }
+
+    let photoUrl = "";
+    if (req.file) {
+      // Upload the image to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "ingredients", // Store in an 'ingredients' folder in Cloudinary
+      });
+      photoUrl = result.secure_url; // Get the Cloudinary URL
+      console.log("Cloudinary upload result:", result); // Log the upload result
+
+      // Delete the temporary file
+      fs.unlinkSync(req.file.path);
+      console.log("Deleted temporary file:", req.file.path);
     }
 
     const ingredientData = {
@@ -166,15 +188,20 @@ router.post("/", upload, async (req, res) => {
       price: parseFloat(price),
       disponibility: disponibility === "true",
       qtMax: parseFloat(qtMax),
-      photo: req.file ? `/Uploads/ingredients/${req.file.filename}` : null,
+      photo: photoUrl,
       archived: false,
     };
+
     const ingredient = new Ingredient(ingredientData);
     const savedIngredient = await ingredient.save();
     res.status(201).json(savedIngredient);
   } catch (error) {
-    console.error("Error creating ingredient:", error);
-    res.status(400).json({ error: error.message });
+    console.error("Error creating ingredient:", error); // Log the error
+    // Clean up temporary file in case of error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -260,7 +287,7 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /ingredient/{id}:
  *   put:
- *     summary: Update an ingredient with optional image upload
+ *     summary: Update an ingredient with optional image upload to Cloudinary
  *     tags: [Ingredient]
  *     parameters:
  *       - in: path
@@ -336,6 +363,9 @@ router.get("/:id", async (req, res) => {
  */
 router.put("/:id", upload, async (req, res) => {
   try {
+    console.log("Request body:", req.body); // Log the form fields
+    console.log("Uploaded file:", req.file); // Log the file details
+
     // Validate required fields
     const { libelle, quantity, type, price, disponibility, qtMax } = req.body;
     if (!libelle || quantity === undefined || !type || price === undefined || disponibility === undefined || qtMax === undefined) {
@@ -355,16 +385,25 @@ router.put("/:id", upload, async (req, res) => {
     if (req.file) {
       const existingIngredient = await Ingredient.findById(req.params.id);
       if (existingIngredient && existingIngredient.photo) {
-        const oldPhotoPath = path.join(
-          __dirname,
-          "../../",
-          existingIngredient.photo
-        );
-        if (fs.existsSync(oldPhotoPath)) {
-          fs.unlinkSync(oldPhotoPath);
-        }
+        const publicId = existingIngredient.photo
+          .split("/")
+          .slice(-2)
+          .join("/")
+          .split(".")[0]; // Extract public ID from Cloudinary URL
+        await cloudinary.uploader.destroy(publicId);
+        console.log("Deleted old photo from Cloudinary:", publicId);
       }
-      updateData.photo = `/Uploads/ingredients/${req.file.filename}`;
+
+      // Upload the new photo to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "ingredients",
+      });
+      updateData.photo = result.secure_url; // Update with the new Cloudinary URL
+      console.log("Cloudinary upload result:", result);
+
+      // Delete the temporary file
+      fs.unlinkSync(req.file.path);
+      console.log("Deleted temporary file:", req.file.path);
     }
 
     const ingredient = await Ingredient.findByIdAndUpdate(
@@ -377,8 +416,12 @@ router.put("/:id", upload, async (req, res) => {
     }
     res.json(ingredient);
   } catch (error) {
-    console.error("Error updating ingredient:", error);
-    res.status(400).json({ error: error.message });
+    console.error("Error updating ingredient:", error); // Log the error
+    // Clean up temporary file in case of error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -426,11 +469,15 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ error: "Ingredient not found" });
     }
 
+    // Delete the photo from Cloudinary if it exists
     if (ingredient.photo) {
-      const photoPath = path.join(__dirname, "../../", ingredient.photo);
-      if (fs.existsSync(photoPath)) {
-        fs.unlinkSync(photoPath);
-      }
+      const publicId = ingredient.photo
+        .split("/")
+        .slice(-2)
+        .join("/")
+        .split(".")[0]; // Extract public ID from Cloudinary URL
+      await cloudinary.uploader.destroy(publicId);
+      console.log("Deleted photo from Cloudinary:", publicId);
     }
 
     await Ingredient.findByIdAndDelete(req.params.id);
