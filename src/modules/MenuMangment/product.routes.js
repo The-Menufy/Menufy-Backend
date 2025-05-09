@@ -785,89 +785,21 @@ router.put("/:id/restore", async (req, res) => {
   }
 });
 
-/**
- * @swagger
- * /product/category/{categoryId}:
- *   get:
- *     summary: Get products by category (excluding dish of the day)
- *     tags: [Product]
- *     parameters:
- *       - in: path
- *         name: categoryId
- *         required: true
- *         schema:
- *           type: string
- *         description: Category ID
- *     responses:
- *       200:
- *         description: Products in category
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 allOf:
- *                   - $ref: '#/components/schemas/Product'
- *                   - type: object
- *                     properties:
- *                       ingredients:
- *                         type: array
- *                         items:
- *                           $ref: '#/components/schemas/Ingredient'
- *       400:
- *         description: Invalid category ID
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       404:
- *         description: Category not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       500:
- *         description: Server error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-router.get("/category/:categoryId", async (req, res) => {
+
+router.get('/category/:categoryId', async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.categoryId)) {
-      return res.status(400).json({ error: "Invalid category ID" });
-    }
-
-    const category = await Category.findById(req.params.categoryId);
-    if (!category) {
-      return res.status(404).json({ error: "Category not found" });
-    }
-
-    const dishOfTheDayProducts = await DishOfTheDay.find().distinct("productFK");
-    const products = await Product.find({
-      categoryFK: req.params.categoryId,
-      _id: { $nin: dishOfTheDayProducts },
-      archived: false,
-    })
-      .populate("categoryFK")
-      .populate("recipeFK");
-
-    const productsWithDetails = await Promise.all(
-      products.map(async (product) => {
-        const ingredients = await Ingredient.find({ productFK: product._id });
-        return {
-          ...product.toObject(),
-          ingredients,
-        };
-      })
-    );
-
-    res.json(productsWithDetails);
+    const products = await Product.find({ categoryFK: req.params.categoryId })
+      .populate('categoryFK')
+      .populate({
+        path: 'recipeFK',
+        populate: { path: 'variants', select: 'name portions images' }
+      });
+    
+    res.json(products);
   } catch (error) {
-    const status = error.message.includes("Invalid") ? 400 : 500;
-    res.status(status).json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
+
 
 module.exports = router;
