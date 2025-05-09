@@ -328,10 +328,7 @@ router.post("/", uploadMiddleware, async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const dishOfTheDayProducts = await DishOfTheDay.find().distinct("productFK");
-    const products = await Product.find({
-      _id: { $nin: dishOfTheDayProducts },
-      archived: false,
-    })
+    const products = await Product.find({})
       .populate("categoryFK")
       .populate("recipeFK");
     res.json(products);

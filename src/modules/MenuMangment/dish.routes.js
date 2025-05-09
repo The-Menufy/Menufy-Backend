@@ -244,6 +244,124 @@ router.post("/", async (req, res) => {
 
 /**
  * @swagger
+ * /dish/random:
+ *   post:
+ *     summary: Add multiple random dishes of the day for a specific date
+ *     tags: [DishOfTheDay]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - date
+ *               - count
+ *             properties:
+ *               date:
+ *                 type: string
+ *                 format: date
+ *                 description: Date the dishes are featured
+ *                 example: "2024-05-04"
+ *               count:
+ *                 type: integer
+ *                 description: Number of random dishes to add
+ *                 example: 3
+ *               statut:
+ *                 type: string
+ *                 description: Status of the dishes
+ *                 example: Active
+ *     responses:
+ *       201:
+ *         description: Random dishes of the day created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/DishOfTheDay'
+ *       400:
+ *         description: Invalid data or insufficient products
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.post("/random", async (req, res) => {
+  try {
+    const { date, count, statut } = req.body;
+
+    if (!date || !count || count < 1) {
+      return res
+        .status(400)
+        .json({ message: "Date and a positive count are required" });
+    }
+
+    // Get random products using $sample
+    const products = await Product.aggregate([
+      { $sample: { size: parseInt(count) } },
+    ]);
+
+    if (products.length < count) {
+      return res.status(400).json({
+        message: `Not enough available products. Requested: ${count}, Found: ${products.length}`,
+      });
+    }
+
+    // Create DishOfTheDay entries
+    const dishes = await Promise.all(
+      products.map(async (product) => {
+        const newDish = new DishOfTheDay({
+          date,
+          statut: statut || "Active",
+          productFK: product._id,
+        });
+        return await newDish.save();
+      })
+    );
+
+    // Populate the saved dishes
+    const populatedDishes = await DishOfTheDay.find({
+      _id: { $in: dishes.map((d) => d._id) },
+    }).populate({
+      path: "productFK",
+      populate: [
+        { path: "categoryFK", select: "libelle" },
+        {
+          path: "recipeFK",
+          populate: [
+            {
+              path: "ingredientsGroup.items.ingredient",
+              select: "libelle photo qtMax",
+            },
+            {
+              path: "utensils",
+              select: "libelle quantity disponibility photo",
+            },
+            { path: "variants", select: "name portions images" },
+          ],
+        },
+      ],
+    });
+
+    res.status(201).json(populatedDishes);
+  } catch (error) {
+    console.error("Error creating random Dishes of the Day:", error);
+    res.status(500).json({
+      message: "Error creating random Dishes of the Day",
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * @swagger
  * /dish:
  *   get:
  *     summary: Retrieve all dishes of the day
